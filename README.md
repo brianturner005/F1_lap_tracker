@@ -1,2 +1,97 @@
-# F1_lap_tracker
-Tracks lap times for sim racing
+# F1 Lap Tracker
+
+A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Captures lap times, sector splits, and session data automatically via the game’s built-in UDP telemetry — no mods or third-party middleware required.
+
+-----
+
+## Features
+
+- **Auto-capture** — lap times recorded the instant you cross the finish line
+- **Sector splits** — S1, S2, and S3 times per lap
+- **Best lap tracking** — personal best highlighted in gold with delta for every other lap
+- **Invalid lap flagging** — track limits violations marked clearly
+- **Session info** — track name, session type (Race, Qualifying, Practice, etc.), and weather pulled live from telemetry
+- **Clear session** — reset between stints without restarting the script
+- **Browser dashboard** — works on your laptop or any device on the same local network
+
+-----
+
+## Requirements
+
+- Python 3.8+
+- Flask
+
+```bash
+pip install flask
+```
+
+-----
+
+## Setup
+
+### 1. In-game telemetry (one-time)
+
+In F1 25, go to **Settings → Telemetry Settings** and configure:
+
+|Setting       |Value                       |
+|--------------|----------------------------|
+|UDP Telemetry |**On**                      |
+|UDP Format    |**2023** (or 2024 if listed)|
+|UDP IP Address|**127.0.0.1**               |
+|UDP Port      |**20777**                   |
+|Broadcast Mode|**Off**                     |
+
+### 2. Run the tracker
+
+```bash
+python f1_lap_tracker.py
+```
+
+### 3. Open the dashboard
+
+Navigate to **http://localhost:5000** in any browser while the script is running.
+
+-----
+
+## Usage
+
+Start the script before or after launching F1 25 — order doesn’t matter. Once the game starts broadcasting telemetry (typically when you enter a session), the dashboard status indicator will switch to **LIVE TELEMETRY** and laps will begin populating automatically.
+
+Use the **Clear Session** button in the top-right to reset lap history between sessions or stints.
+
+-----
+
+## How It Works
+
+F1 25 broadcasts UDP packets on your local network containing real-time telemetry data. This app runs two threads simultaneously:
+
+- **UDP listener** on port `20777` — parses incoming packets for session data (Packet ID 1) and lap data (Packet ID 2)
+- **HTTP server** on port `5000` — serves the dashboard and a `/api/state` endpoint that the browser polls every second
+
+All data is held in memory for the duration of the session. Nothing is written to disk.
+
+-----
+
+## Troubleshooting
+
+**Dashboard shows “Waiting for telemetry…”**
+
+- Confirm UDP Telemetry is set to **On** in-game
+- Confirm the IP is `127.0.0.1` and port is `20777`
+- Make sure you’re in an active session (not the main menu)
+
+**Track name shows “Track [number]” or sector times look wrong**
+
+- Codemasters occasionally adjusts packet offsets between game releases. Try switching the in-game UDP Format between 2023 and 2024 if both options are available. The packet parser may need a minor offset tweak for new game versions.
+
+**Port already in use**
+
+- Another app (SimHub, Crew Chief, etc.) may already be listening on port `20777`. Close it, or configure F1 25 to send to a different port and update the `bind` call in the script accordingly.
+
+-----
+
+## Notes
+
+- This app is built for **F1 25** but is compatible with F1 2023 and F1 2024 using the same UDP format.
+- Console versions (PlayStation, Xbox) can also broadcast telemetry to a PC on the same network — set the UDP IP to your PC’s local IP instead of `127.0.0.1` and ensure both devices are on the same network.
+- No data is sent externally. Everything runs locally.
