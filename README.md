@@ -36,7 +36,7 @@ In F1 25, go to **Settings → Telemetry Settings** and configure:
 |Setting       |Value                       |
 |--------------|----------------------------|
 |UDP Telemetry |**On**                      |
-|UDP Format    |**2023** (or 2024 if listed)|
+|UDP Format    |**2025**|
 |UDP IP Address|**127.0.0.1**               |
 |UDP Port      |**20777**                   |
 |Broadcast Mode|**Off**                     |
