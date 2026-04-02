@@ -285,29 +285,33 @@ def parse_session_packet(data, player_idx):
         with state_lock:
             old_track        = state["session"]["track"]
             old_session_type = state["session"]["session_type"]
-            state["session"]["weather"]      = weather_name
-            state["session"]["session_type"] = session_name
-            state["session"]["track"]        = track_name
-            state["total_laps"]              = total_laps_val
-            state["udp_connected"]           = True
+            state["session"]["weather"] = weather_name
+            # Don't overwrite a known session type with "Unknown" — the game
+            # sends sessionType=0 transiently during formation lap / pre-race.
+            if session_name != "Unknown" or old_session_type == "Unknown":
+                state["session"]["session_type"] = session_name
+            effective_session_name = state["session"]["session_type"]
+            state["session"]["track"]   = track_name
+            state["total_laps"]         = total_laps_val
+            state["udp_connected"]      = True
             if state["session"]["started_at"] is None:
                 started_at = datetime.now().isoformat()
                 state["session"]["started_at"] = started_at
                 create_session = True
             current_session_id = state["current_session_id"]
             # Reload PB whenever track or session type changes to a known value
-            if track_name != "Unknown" and (track_name != old_track or session_name != old_session_type):
+            if track_name != "Unknown" and (track_name != old_track or effective_session_name != old_session_type):
                 load_pb = True
 
         if create_session:
-            new_id = db_create_session(track_name, session_name, weather_name, started_at)
+            new_id = db_create_session(track_name, effective_session_name, weather_name, started_at)
             with state_lock:
                 state["current_session_id"] = new_id
         elif current_session_id is not None:
-            db_update_session(current_session_id, track_name, session_name, weather_name)
+            db_update_session(current_session_id, track_name, effective_session_name, weather_name)
 
         if load_pb:
-            pb = db_get_track_pb(track_name, session_name)
+            pb = db_get_track_pb(track_name, effective_session_name)
             with state_lock:
                 if pb:
                     state["track_pb_ms"]       = pb["lap_time_ms"]
@@ -368,19 +372,31 @@ def parse_lap_data_packet(data, player_idx):
         with state_lock:
             state["udp_connected"] = True
             state["player_position"] = position
+
+            # Cache sector times continuously — the game resets them at the lap
+            # boundary, so we must read them during the lap, not at lap-end.
+            if s1_total_ms > 0:
+                state["last_sector"][0] = s1_total_ms
+            if s2_total_ms > 0:
+                state["last_sector"][1] = s2_total_ms
+
             prev_lap = state["current_lap"]
             state["current_lap"] = cur_lap_num
 
             # New lap completed
             if last_lap_ms > 0 and cur_lap_num > prev_lap:
+                s1_val = state["last_sector"][0]
+                s2_val = state["last_sector"][1]
+                state["last_sector"] = [None, None, None]  # reset for new lap
+
                 lap_record = {
                     "lap_num": prev_lap,
                     "lap_time_ms": last_lap_ms,
                     "lap_time": ms_to_laptime(last_lap_ms),
                     "invalid": bool(invalid),
-                    "s1_ms": s1_total_ms if s1_total_ms > 0 else None,
-                    "s2_ms": s2_total_ms if s2_total_ms > 0 else None,
-                    "s3_ms": (last_lap_ms - s1_total_ms - s2_total_ms) if (s1_total_ms > 0 and s2_total_ms > 0) else None,
+                    "s1_ms": s1_val,
+                    "s2_ms": s2_val,
+                    "s3_ms": (last_lap_ms - s1_val - s2_val) if (s1_val and s2_val) else None,
                     "timestamp": datetime.now().isoformat(),
                     "compound": state["current_compound"],
                     "is_track_pb": False,
