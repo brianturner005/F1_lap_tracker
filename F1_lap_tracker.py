@@ -53,6 +53,9 @@ state = {
     "session_history": [],   # past sessions
     "current_session_id": None,
     "current_compound": None,
+    "track_pb_ms": None,
+    "track_pb_time": None,
+    "track_pb_compound": None,
     "udp_connected": False,
     "player_position": 0,
     "total_laps": 0,
@@ -113,11 +116,27 @@ def init_db():
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         )
     """)
-    # Migration: add compound column to existing databases
-    try:
-        con.execute("ALTER TABLE laps ADD COLUMN compound TEXT")
-    except sqlite3.OperationalError:
-        pass  # column already exists
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS personal_bests (
+            track        TEXT NOT NULL,
+            session_type TEXT NOT NULL,
+            lap_time_ms  INTEGER NOT NULL,
+            lap_time     TEXT NOT NULL,
+            compound     TEXT,
+            set_at       TEXT,
+            session_id   INTEGER,
+            PRIMARY KEY (track, session_type)
+        )
+    """)
+    # Migrations for existing databases
+    for col in [
+        "ALTER TABLE laps ADD COLUMN compound TEXT",
+        "ALTER TABLE laps ADD COLUMN is_track_pb INTEGER DEFAULT 0",
+    ]:
+        try:
+            con.execute(col)
+        except sqlite3.OperationalError:
+            pass
     con.commit()
     con.close()
 
@@ -162,6 +181,36 @@ def db_save_lap(session_id, lap):
     )
     con.commit()
     con.close()
+
+def db_get_track_pb(track, session_type):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    row = con.execute(
+        "SELECT * FROM personal_bests WHERE track=? AND session_type=?",
+        (track, session_type)
+    ).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+def db_upsert_track_pb(track, session_type, lap_time_ms, lap_time, compound, session_id, set_at):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        """INSERT OR REPLACE INTO personal_bests
+           (track, session_type, lap_time_ms, lap_time, compound, session_id, set_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (track, session_type, lap_time_ms, lap_time, compound, session_id, set_at)
+    )
+    con.commit()
+    con.close()
+
+def db_get_all_pbs():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM personal_bests ORDER BY track, session_type"
+    ).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
 
 def ms_to_laptime(ms):
     if ms is None or ms <= 0:
@@ -231,8 +280,11 @@ def parse_session_packet(data, player_idx):
         create_session = False
         started_at = None
         current_session_id = None
+        load_pb = False
 
         with state_lock:
+            old_track        = state["session"]["track"]
+            old_session_type = state["session"]["session_type"]
             state["session"]["weather"]      = weather_name
             state["session"]["session_type"] = session_name
             state["session"]["track"]        = track_name
@@ -243,6 +295,9 @@ def parse_session_packet(data, player_idx):
                 state["session"]["started_at"] = started_at
                 create_session = True
             current_session_id = state["current_session_id"]
+            # Reload PB whenever track or session type changes to a known value
+            if track_name != "Unknown" and (track_name != old_track or session_name != old_session_type):
+                load_pb = True
 
         if create_session:
             new_id = db_create_session(track_name, session_name, weather_name, started_at)
@@ -250,6 +305,18 @@ def parse_session_packet(data, player_idx):
                 state["current_session_id"] = new_id
         elif current_session_id is not None:
             db_update_session(current_session_id, track_name, session_name, weather_name)
+
+        if load_pb:
+            pb = db_get_track_pb(track_name, session_name)
+            with state_lock:
+                if pb:
+                    state["track_pb_ms"]       = pb["lap_time_ms"]
+                    state["track_pb_time"]     = pb["lap_time"]
+                    state["track_pb_compound"] = pb.get("compound")
+                else:
+                    state["track_pb_ms"]       = None
+                    state["track_pb_time"]     = None
+                    state["track_pb_compound"] = None
     except Exception:
         pass
 
@@ -296,6 +363,7 @@ def parse_lap_data_packet(data, player_idx):
 
         save_session_id = None
         lap_record = None
+        save_pb_data = None
 
         with state_lock:
             state["udp_connected"] = True
@@ -315,6 +383,7 @@ def parse_lap_data_packet(data, player_idx):
                     "s3_ms": (last_lap_ms - s1_total_ms - s2_total_ms) if (s1_total_ms > 0 and s2_total_ms > 0) else None,
                     "timestamp": datetime.now().isoformat(),
                     "compound": state["current_compound"],
+                    "is_track_pb": False,
                 }
                 lap_record["s1"] = ms_to_laptime(lap_record["s1_ms"])
                 lap_record["s2"] = ms_to_laptime(lap_record["s2_ms"])
@@ -322,21 +391,43 @@ def parse_lap_data_packet(data, player_idx):
 
                 state["laps"].append(lap_record)
 
-                # Update best lap (valid laps only)
+                # Update session best (valid laps only)
                 if not invalid and last_lap_ms > 10000:
                     if state["best_lap_ms"] is None or last_lap_ms < state["best_lap_ms"]:
                         state["best_lap_ms"] = last_lap_ms
                         state["best_lap_num"] = prev_lap
 
+                    # Check & update track PB
+                    if state["track_pb_ms"] is None or last_lap_ms < state["track_pb_ms"]:
+                        state["track_pb_ms"]       = last_lap_ms
+                        state["track_pb_time"]     = ms_to_laptime(last_lap_ms)
+                        state["track_pb_compound"] = state["current_compound"]
+                        lap_record["is_track_pb"]  = True
+                        save_pb_data = (
+                            state["session"]["track"],
+                            state["session"]["session_type"],
+                            last_lap_ms,
+                            ms_to_laptime(last_lap_ms),
+                            state["current_compound"],
+                            state["current_session_id"],
+                            datetime.now().isoformat(),
+                        )
+
                 save_session_id = state["current_session_id"]
 
-            # Annotate all laps with delta
+            # Annotate all laps with delta (use track PB as reference when available)
+            ref_ms = state["track_pb_ms"] if state["track_pb_ms"] is not None else state["best_lap_ms"]
             for lap in state["laps"]:
-                lap["delta"] = delta_str(lap["lap_time_ms"], state["best_lap_ms"])
+                if lap.get("is_track_pb"):
+                    lap["delta"] = "PB!"
+                else:
+                    lap["delta"] = delta_str(lap["lap_time_ms"], ref_ms)
                 lap["is_best"] = lap["lap_num"] == state["best_lap_num"]
 
         if save_session_id is not None:
             db_save_lap(save_session_id, lap_record)
+        if save_pb_data is not None:
+            db_upsert_track_pb(*save_pb_data)
     except Exception:
         pass
 
@@ -593,6 +684,7 @@ background: var(--panel);
 tbody tr { border-bottom: 1px solid #181820; transition: background .15s; }
 tbody tr:hover { background: #1a1a22; }
 tbody tr.best-lap { background: rgba(255,215,0,.06); }
+tbody tr.track-pb-lap { background: rgba(199,125,255,.07); }
 tbody tr.invalid { opacity: .4; }
 td { padding: 7px 8px; }
 td.lap-num { color: var(--muted); font-size: .7rem; }
@@ -601,6 +693,7 @@ td.lap-time.best { color: var(--gold); }
 td.delta { font-size: .75rem; }
 td.delta.positive { color: #ff6b6b; }
 td.delta.best-text { color: var(--gold); font-weight: bold; }
+td.delta.pb-text { color: var(--purple); font-weight: bold; }
 td.sector { color: #9999bb; font-size: .72rem; }
 .invalid-pill {
 background: rgba(225,6,0,.2);
@@ -726,6 +819,7 @@ transition: border-color .2s, color .2s;
 <div class="grid" id="main-grid">
   <!-- filled by JS -->
 </div>
+<div id="pbs-section"></div>
 <div id="sessions-section"></div>
 
 <script>
@@ -756,11 +850,49 @@ async function fetchState() {
 async function clearSession() {
   await fetch('/api/clear', { method: 'POST' });
   fetchState();
+  fetchPBs();
   fetchSessions();
 }
 
 function exportCSV() {
   window.location.href = '/api/export';
+}
+
+async function fetchPBs() {
+  try {
+    const r = await fetch('/api/pbs');
+    const pbs = await r.json();
+    renderPBs(pbs);
+  } catch(e) {}
+}
+
+function renderPBs(pbs) {
+  const el = document.getElementById('pbs-section');
+  if (!pbs || pbs.length === 0) { el.innerHTML = ''; return; }
+  let rows = '';
+  for (const pb of pbs) {
+    const setAt = pb.set_at ? pb.set_at.replace('T',' ').substring(0,19) : '—';
+    rows += `<tr>
+      <td>${pb.track}</td>
+      <td style="color:var(--muted);font-size:.72rem">${pb.session_type || '—'}</td>
+      <td class="lap-time" style="color:var(--purple)">${pb.lap_time}</td>
+      <td>${compoundPill(pb.compound)}</td>
+      <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
+    </tr>`;
+  }
+  el.innerHTML = `<div class="sessions-wrap">
+    <div class="panel">
+      <div class="panel-title">Personal Bests — All Time</div>
+      <div class="lap-table-wrap">
+        <table>
+          <thead><tr>
+            <th>TRACK</th><th>SESSION TYPE</th><th>TIME</th><th>TYRE</th><th>SET</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
 }
 
 async function fetchSessions() {
@@ -844,12 +976,16 @@ function render(d) {
   </div>`;
 
   // Session info
+  const pbRow = d.track_pb_time
+    ? `<div class="info-row"><span class="info-key">TRACK PB</span><span class="info-val" style="color:var(--purple)">${d.track_pb_time}${d.track_pb_compound ? ' <span style="font-size:.65rem;color:var(--muted)">(' + d.track_pb_compound + ')</span>' : ''}</span></div>`
+    : `<div class="info-row"><span class="info-key">TRACK PB</span><span class="info-val" style="color:var(--muted)">No record yet</span></div>`;
   const p3 = `<div class="panel">
     <div class="panel-title">Session</div>
     <div class="info-row"><span class="info-key">TRACK</span><span class="info-val">${d.session.track}</span></div>
     <div class="info-row"><span class="info-key">TYPE</span><span class="info-val">${d.session.session_type}</span></div>
     <div class="info-row"><span class="info-key">WEATHER</span><span class="info-val">${d.session.weather}</span></div>
     <div class="info-row"><span class="info-key">POSITION</span><span class="info-val">${d.player_position > 0 ? 'P' + d.player_position : '—'}</span></div>
+    ${pbRow}
   </div>`;
 
   // Lap table
@@ -862,13 +998,19 @@ function render(d) {
   } else {
     const reversed = [...d.laps].reverse();
     for (const lap of reversed) {
-      const isBest = lap.is_best;
+      const isBest    = lap.is_best;
+      const isTrackPB = lap.is_track_pb;
       const isInvalid = lap.invalid;
-      const deltaClass = lap.delta === 'BEST' ? 'best-text' : (lap.delta && lap.delta.startsWith('+') ? 'positive' : '');
-      rows += `<tr class="${isBest ? 'best-lap' : ''} ${isInvalid ? 'invalid' : ''}">
+      const deltaClass = lap.delta === 'PB!'  ? 'pb-text'
+                       : lap.delta === 'BEST' ? 'best-text'
+                       : (lap.delta && lap.delta.startsWith('+')) ? 'positive' : '';
+      const timeLabel = isTrackPB ? lap.lap_time + ' 🏆'
+                      : isBest    ? lap.lap_time + ' ★'
+                      : lap.lap_time;
+      rows += `<tr class="${isBest ? 'best-lap' : ''} ${isTrackPB ? 'track-pb-lap' : ''} ${isInvalid ? 'invalid' : ''}">
         <td class="lap-num">${lap.lap_num}</td>
         <td>${compoundPill(lap.compound)}</td>
-        <td class="lap-time ${isBest ? 'best' : ''}">${lap.lap_time}${isBest ? ' ★' : ''}</td>
+        <td class="lap-time ${isTrackPB ? 'best' : isBest ? 'best' : ''}">${timeLabel}</td>
         <td class="delta ${deltaClass}">${lap.delta || ''}</td>
         <td class="sector">${lap.s1 !== '--:--.---' ? lap.s1 : '—'}</td>
         <td class="sector">${lap.s2 !== '--:--.---' ? lap.s2 : '—'}</td>
@@ -906,8 +1048,10 @@ function msToLap(ms) {
 }
 
 fetchState();
+fetchPBs();
 fetchSessions();
 setInterval(fetchState, 1000);
+setInterval(fetchPBs, 60000);
 setInterval(fetchSessions, 30000);
 </script>
 
@@ -935,6 +1079,15 @@ class Handler(BaseHTTPRequestHandler):
             sessions = [dict(r) for r in rows]
             con.close()
             payload = json.dumps(sessions).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        elif parsed.path == "/api/pbs":
+            pbs = db_get_all_pbs()
+            payload = json.dumps(pbs).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", len(payload))
