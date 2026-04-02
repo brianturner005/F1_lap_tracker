@@ -52,6 +52,7 @@ state = {
     "last_sector": [None, None, None],  # current lap sector times ms
     "session_history": [],   # past sessions
     "current_session_id": None,
+    "current_compound": None,
     "udp_connected": False,
     "player_position": 0,
     "total_laps": 0,
@@ -77,6 +78,8 @@ SESSION_TYPES = {
 
 WEATHER_IDS = {0:"Clear", 1:"Light Cloud", 2:"Overcast", 3:"Light Rain",
                4:"Heavy Rain", 5:"Storm"}
+
+VISUAL_COMPOUNDS = {7:"Inter", 8:"Wet", 16:"Soft", 17:"Medium", 18:"Hard"}
 
 # ── SQLite persistence ────────────────────────────────────────────────────────
 
@@ -106,9 +109,15 @@ def init_db():
             s3_ms        INTEGER,
             invalid      INTEGER,
             timestamp    TEXT,
+            compound     TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         )
     """)
+    # Migration: add compound column to existing databases
+    try:
+        con.execute("ALTER TABLE laps ADD COLUMN compound TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     con.commit()
     con.close()
 
@@ -145,10 +154,11 @@ def db_save_lap(session_id, lap):
     con = sqlite3.connect(DB_PATH)
     con.execute(
         """INSERT INTO laps
-           (session_id, lap_num, lap_time_ms, lap_time, s1_ms, s2_ms, s3_ms, invalid, timestamp)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           (session_id, lap_num, lap_time_ms, lap_time, s1_ms, s2_ms, s3_ms, invalid, timestamp, compound)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
         (session_id, lap["lap_num"], lap["lap_time_ms"], lap["lap_time"],
-         lap["s1_ms"], lap["s2_ms"], lap["s3_ms"], int(lap["invalid"]), lap["timestamp"])
+         lap["s1_ms"], lap["s2_ms"], lap["s3_ms"], int(lap["invalid"]),
+         lap["timestamp"], lap.get("compound"))
     )
     con.commit()
     con.close()
@@ -304,6 +314,7 @@ def parse_lap_data_packet(data, player_idx):
                     "s2_ms": s2_total_ms if s2_total_ms > 0 else None,
                     "s3_ms": (last_lap_ms - s1_total_ms - s2_total_ms) if (s1_total_ms > 0 and s2_total_ms > 0) else None,
                     "timestamp": datetime.now().isoformat(),
+                    "compound": state["current_compound"],
                 }
                 lap_record["s1"] = ms_to_laptime(lap_record["s1_ms"])
                 lap_record["s2"] = ms_to_laptime(lap_record["s2_ms"])
@@ -329,6 +340,23 @@ def parse_lap_data_packet(data, player_idx):
     except Exception:
         pass
 
+# Packet ID 7 – Car Status Data
+
+CAR_STATUS_SIZE = 55  # F1 25 per-car car status size
+
+def parse_car_status_packet(data, player_idx):
+    try:
+        # visualTyreCompound sits at byte +26 within each car's CarStatusData block
+        base = HEADER_SIZE + (player_idx * CAR_STATUS_SIZE)
+        if len(data) < base + CAR_STATUS_SIZE:
+            return
+        visual_compound = struct.unpack_from("<B", data, base + 26)[0]
+        compound_name = VISUAL_COMPOUNDS.get(visual_compound)
+        with state_lock:
+            state["current_compound"] = compound_name
+    except Exception:
+        pass
+
 def udp_listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -347,6 +375,8 @@ def udp_listener():
                 parse_session_packet(data, pidx)
             elif pid == 2:
                 parse_lap_data_packet(data, pidx)
+            elif pid == 7:
+                parse_car_status_packet(data, pidx)
         except socket.timeout:
             pass
         except Exception:
@@ -626,6 +656,22 @@ display: inline-block;
 }
 .export-link:hover { background: rgba(0,214,143,.1); border-color: var(--green); }
 
+/* Tyre compound pills */
+.cpill {
+font-family: 'Orbitron', sans-serif;
+font-size: .6rem;
+font-weight: 700;
+padding: 2px 6px;
+border-radius: 3px;
+letter-spacing: .05em;
+border: 1px solid transparent;
+}
+.cpill-S { background:rgba(255,50,50,.15);  color:#ff5555; border-color:rgba(255,50,50,.35); }
+.cpill-M { background:rgba(255,210,0,.15);  color:#ffd700; border-color:rgba(255,210,0,.35); }
+.cpill-H { background:rgba(210,210,210,.12);color:#cccccc; border-color:rgba(200,200,200,.3); }
+.cpill-I { background:rgba(0,200,90,.15);   color:#00c85a; border-color:rgba(0,200,90,.35); }
+.cpill-W { background:rgba(60,130,255,.15); color:#5599ff; border-color:rgba(60,130,255,.35); }
+
 /* Theme selector */
 .theme-select {
 background: var(--panel);
@@ -759,6 +805,13 @@ function renderSessions(sessions) {
 
 function fmt(v) { return v || '--:--.---'; }
 
+function compoundPill(c) {
+  if (!c) return '<span style="color:var(--muted)">—</span>';
+  const map = { Soft:'S', Medium:'M', Hard:'H', Inter:'I', Wet:'W' };
+  const abbr = map[c] || c[0];
+  return `<span class="cpill cpill-${abbr}">${abbr}</span>`;
+}
+
 function render(d) {
   const dot = document.getElementById('dot');
   const stxt = document.getElementById('status-text');
@@ -802,7 +855,7 @@ function render(d) {
   // Lap table
   let rows = '';
   if (d.laps.length === 0) {
-    rows = `<tr><td colspan="6" class="waiting"><div class="big-icon">🏎</div>
+    rows = `<tr><td colspan="8" class="waiting"><div class="big-icon">🏎</div>
       <p>No laps recorded yet.<br>
       Make sure UDP telemetry is <code>ON</code> in F1 25 settings<br>
       IP: <code>127.0.0.1</code> &nbsp; Port: <code>20777</code></p></td></tr>`;
@@ -814,6 +867,7 @@ function render(d) {
       const deltaClass = lap.delta === 'BEST' ? 'best-text' : (lap.delta && lap.delta.startsWith('+') ? 'positive' : '');
       rows += `<tr class="${isBest ? 'best-lap' : ''} ${isInvalid ? 'invalid' : ''}">
         <td class="lap-num">${lap.lap_num}</td>
+        <td>${compoundPill(lap.compound)}</td>
         <td class="lap-time ${isBest ? 'best' : ''}">${lap.lap_time}${isBest ? ' ★' : ''}</td>
         <td class="delta ${deltaClass}">${lap.delta || ''}</td>
         <td class="sector">${lap.s1 !== '--:--.---' ? lap.s1 : '—'}</td>
@@ -832,7 +886,7 @@ function render(d) {
     <div class="lap-table-wrap">
       <table>
         <thead><tr>
-          <th>LAP</th><th>TIME</th><th>DELTA</th><th>S1</th><th>S2</th><th>S3</th><th></th>
+          <th>LAP</th><th>TYRE</th><th>TIME</th><th>DELTA</th><th>S1</th><th>S2</th><th>S3</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -893,10 +947,10 @@ class Handler(BaseHTTPRequestHandler):
                 laps_snapshot = list(state["laps"])
             output = io.StringIO()
             writer = csv.writer(output)
-            writer.writerow(["Lap", "Time", "S1 (ms)", "S2 (ms)", "S3 (ms)", "Invalid", "Timestamp"])
+            writer.writerow(["Lap", "Tyre", "Time", "S1 (ms)", "S2 (ms)", "S3 (ms)", "Invalid", "Timestamp"])
             for lap in laps_snapshot:
-                writer.writerow([lap["lap_num"], lap["lap_time"], lap["s1_ms"],
-                                  lap["s2_ms"], lap["s3_ms"], lap["invalid"], lap["timestamp"]])
+                writer.writerow([lap["lap_num"], lap.get("compound", ""), lap["lap_time"],
+                                  lap["s1_ms"], lap["s2_ms"], lap["s3_ms"], lap["invalid"], lap["timestamp"]])
             csv_bytes = output.getvalue().encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/csv")
@@ -919,10 +973,10 @@ class Handler(BaseHTTPRequestHandler):
             con.close()
             output = io.StringIO()
             writer = csv.writer(output)
-            writer.writerow(["Lap", "Time", "S1 (ms)", "S2 (ms)", "S3 (ms)", "Invalid", "Timestamp"])
+            writer.writerow(["Lap", "Tyre", "Time", "S1 (ms)", "S2 (ms)", "S3 (ms)", "Invalid", "Timestamp"])
             for lap in laps:
-                writer.writerow([lap["lap_num"], lap["lap_time"], lap["s1_ms"],
-                                  lap["s2_ms"], lap["s3_ms"], bool(lap["invalid"]), lap["timestamp"]])
+                writer.writerow([lap["lap_num"], lap["compound"] or "", lap["lap_time"],
+                                  lap["s1_ms"], lap["s2_ms"], lap["s3_ms"], bool(lap["invalid"]), lap["timestamp"]])
             csv_bytes = output.getvalue().encode()
             fname = f"f1_session_{session_id}.csv"
             self.send_response(200)
