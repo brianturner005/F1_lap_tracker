@@ -27,6 +27,9 @@ import socket
 import threading
 import json
 import time
+import sqlite3
+import csv
+import io
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -48,6 +51,7 @@ state = {
     "laps": [],          # list of lap dicts
     "last_sector": [None, None, None],  # current lap sector times ms
     "session_history": [],   # past sessions
+    "current_session_id": None,
     "udp_connected": False,
     "player_position": 0,
     "total_laps": 0,
@@ -73,6 +77,81 @@ SESSION_TYPES = {
 
 WEATHER_IDS = {0:"Clear", 1:"Light Cloud", 2:"Overcast", 3:"Light Rain",
                4:"Heavy Rain", 5:"Storm"}
+
+# ── SQLite persistence ────────────────────────────────────────────────────────
+
+DB_PATH = "f1_laps.db"
+
+def init_db():
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            track        TEXT,
+            session_type TEXT,
+            weather      TEXT,
+            started_at   TEXT,
+            ended_at     TEXT
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS laps (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id   INTEGER NOT NULL,
+            lap_num      INTEGER,
+            lap_time_ms  INTEGER,
+            lap_time     TEXT,
+            s1_ms        INTEGER,
+            s2_ms        INTEGER,
+            s3_ms        INTEGER,
+            invalid      INTEGER,
+            timestamp    TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        )
+    """)
+    con.commit()
+    con.close()
+
+def db_create_session(track, session_type, weather, started_at):
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO sessions (track, session_type, weather, started_at) VALUES (?,?,?,?)",
+        (track, session_type, weather, started_at)
+    )
+    session_id = cur.lastrowid
+    con.commit()
+    con.close()
+    return session_id
+
+def db_update_session(session_id, track, session_type, weather):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "UPDATE sessions SET track=?, session_type=?, weather=? WHERE id=?",
+        (track, session_type, weather, session_id)
+    )
+    con.commit()
+    con.close()
+
+def db_close_session(session_id):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "UPDATE sessions SET ended_at=? WHERE id=?",
+        (datetime.now().isoformat(), session_id)
+    )
+    con.commit()
+    con.close()
+
+def db_save_lap(session_id, lap):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        """INSERT INTO laps
+           (session_id, lap_num, lap_time_ms, lap_time, s1_ms, s2_ms, s3_ms, invalid, timestamp)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (session_id, lap["lap_num"], lap["lap_time_ms"], lap["lap_time"],
+         lap["s1_ms"], lap["s2_ms"], lap["s3_ms"], int(lap["invalid"]), lap["timestamp"])
+    )
+    con.commit()
+    con.close()
 
 def ms_to_laptime(ms):
     if ms is None or ms <= 0:
@@ -135,14 +214,32 @@ def parse_session_packet(data, player_idx):
         session_type   = struct.unpack_from("<B", data, base + 6)[0]
         track_id       = struct.unpack_from("<b", data, base + 7)[0]  # signed
 
+        track_name    = TRACK_IDS.get(track_id, f"Track {track_id}")
+        weather_name  = WEATHER_IDS.get(weather_val, "Unknown")
+        session_name  = SESSION_TYPES.get(session_type, "Unknown")
+
+        create_session = False
+        started_at = None
+        current_session_id = None
+
         with state_lock:
-            state["session"]["weather"] = WEATHER_IDS.get(weather_val, "Unknown")
-            state["session"]["session_type"] = SESSION_TYPES.get(session_type, "Unknown")
-            state["session"]["track"] = TRACK_IDS.get(track_id, f"Track {track_id}")
-            state["total_laps"] = total_laps_val
-            state["udp_connected"] = True
+            state["session"]["weather"]      = weather_name
+            state["session"]["session_type"] = session_name
+            state["session"]["track"]        = track_name
+            state["total_laps"]              = total_laps_val
+            state["udp_connected"]           = True
             if state["session"]["started_at"] is None:
-                state["session"]["started_at"] = datetime.now().isoformat()
+                started_at = datetime.now().isoformat()
+                state["session"]["started_at"] = started_at
+                create_session = True
+            current_session_id = state["current_session_id"]
+
+        if create_session:
+            new_id = db_create_session(track_name, session_name, weather_name, started_at)
+            with state_lock:
+                state["current_session_id"] = new_id
+        elif current_session_id is not None:
+            db_update_session(current_session_id, track_name, session_name, weather_name)
     except Exception:
         pass
 
@@ -187,6 +284,9 @@ def parse_lap_data_packet(data, player_idx):
         s1_total_ms = s1_min * 60000 + s1_ms if s1_min >= 0 else s1_ms
         s2_total_ms = s2_min * 60000 + s2_ms if s2_min >= 0 else s2_ms
 
+        save_session_id = None
+        lap_record = None
+
         with state_lock:
             state["udp_connected"] = True
             state["player_position"] = position
@@ -217,10 +317,15 @@ def parse_lap_data_packet(data, player_idx):
                         state["best_lap_ms"] = last_lap_ms
                         state["best_lap_num"] = prev_lap
 
+                save_session_id = state["current_session_id"]
+
             # Annotate all laps with delta
             for lap in state["laps"]:
                 lap["delta"] = delta_str(lap["lap_time_ms"], state["best_lap_ms"])
                 lap["is_best"] = lap["lap_num"] == state["best_lap_num"]
+
+        if save_session_id is not None:
+            db_save_lap(save_session_id, lap_record)
     except Exception:
         pass
 
@@ -262,6 +367,8 @@ HTML = r"""<!DOCTYPE html>
   :root {
     --red: #e10600;
     --red-dim: #8b0400;
+    --header-tint: #0d0000;
+    --logo-glow: rgba(225,6,0,.4);
     --bg: #0a0a0a;
     --panel: #111114;
     --border: #222228;
@@ -271,6 +378,58 @@ HTML = r"""<!DOCTYPE html>
     --green: #00d68f;
     --purple: #c77dff;
   }
+
+/* ── Team themes ─────────────────────────────────────────────────────────── */
+body.theme-redbull {
+  --red:#3671C6; --red-dim:#1e3a80; --header-tint:#030614;
+  --logo-glow:rgba(54,113,198,.4);
+  --bg:#060810; --panel:#0d1020; --border:#1e2540;
+}
+body.theme-ferrari {
+  --red:#e8002d; --red-dim:#9c001e; --header-tint:#0d0005;
+  --logo-glow:rgba(232,0,45,.4);
+  --bg:#0d0606; --panel:#160a0a; --border:#2e1414;
+}
+body.theme-mercedes {
+  --red:#00d2be; --red-dim:#008c7e; --header-tint:#030d0c;
+  --logo-glow:rgba(0,210,190,.4);
+  --bg:#060d0c; --panel:#0c1614; --border:#1c3330;
+}
+body.theme-mclaren {
+  --red:#ff8000; --red-dim:#b35a00; --header-tint:#0d0700;
+  --logo-glow:rgba(255,128,0,.4);
+  --bg:#0d0800; --panel:#161008; --border:#301e08;
+}
+body.theme-aston {
+  --red:#00e060; --red-dim:#007a38; --header-tint:#020d06;
+  --logo-glow:rgba(0,224,96,.4);
+  --bg:#050d07; --panel:#0a140c; --border:#162a1a;
+}
+body.theme-alpine {
+  --red:#0093cc; --red-dim:#005e85; --header-tint:#02080f;
+  --logo-glow:rgba(0,147,204,.4);
+  --bg:#060a10; --panel:#0c1220; --border:#1c2840;
+}
+body.theme-williams {
+  --red:#37bedd; --red-dim:#1a7a94; --header-tint:#020d10;
+  --logo-glow:rgba(55,190,221,.4);
+  --bg:#060c10; --panel:#0c1520; --border:#1c3040;
+}
+body.theme-racingbulls {
+  --red:#6692ff; --red-dim:#2244cc; --header-tint:#04061a;
+  --logo-glow:rgba(102,146,255,.4);
+  --bg:#070810; --panel:#0f1125; --border:#202545;
+}
+body.theme-sauber {
+  --red:#52e252; --red-dim:#2a8c2a; --header-tint:#020d02;
+  --logo-glow:rgba(82,226,82,.4);
+  --bg:#050e05; --panel:#0a1609; --border:#163018;
+}
+body.theme-haas {
+  --red:#e8182a; --red-dim:#9e0a18; --header-tint:#0d0205;
+  --logo-glow:rgba(232,24,42,.4);
+  --bg:#0d0809; --panel:#1a1214; --border:#342428;
+}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: var(--bg);
@@ -297,7 +456,7 @@ align-items: center;
 justify-content: space-between;
 padding: 16px 24px;
 border-bottom: 2px solid var(--red);
-background: linear-gradient(90deg, #0d0000 0%, var(--panel) 40%);
+background: linear-gradient(90deg, var(--header-tint) 0%, var(--panel) 40%);
 }
 .logo {
 font-family: 'Orbitron', sans-serif;
@@ -305,7 +464,7 @@ font-weight: 900;
 font-size: 1.4rem;
 letter-spacing: .15em;
 color: var(--red);
-text-shadow: 0 0 20px rgba(225,6,0,.4);
+text-shadow: 0 0 20px var(--logo-glow);
 }
 .logo span { color: #fff; }
 .status-dot {
@@ -434,7 +593,7 @@ color: var(--muted);
 .waiting p { font-size: .8rem; line-height: 1.8; }
 .waiting code { color: var(--red); background: #1a0000; padding: 1px 5px; border-radius: 2px; }
 
-/* Clear session button */
+/* Buttons */
 .btn {
 background: transparent;
 border: 1px solid var(--border);
@@ -446,9 +605,43 @@ cursor: pointer;
 border-radius: 3px;
 letter-spacing: .08em;
 transition: all .2s;
+text-decoration: none;
+display: inline-block;
 }
 .btn:hover { border-color: var(--red); color: var(--red); }
 .btn-danger:hover { background: rgba(225,6,0,.1); }
+.btn-green { border-color: #1a3a2a; color: var(--green); }
+.btn-green:hover { border-color: var(--green); background: rgba(0,214,143,.08); color: var(--green); }
+
+/* Past sessions */
+.sessions-wrap { padding: 0 16px 16px; max-width: 1200px; margin: 0 auto; }
+.export-link {
+  color: var(--green);
+  text-decoration: none;
+  font-size: .72rem;
+  border: 1px solid #1a3a2a;
+  padding: 2px 8px;
+  border-radius: 3px;
+  transition: all .2s;
+}
+.export-link:hover { background: rgba(0,214,143,.1); border-color: var(--green); }
+
+/* Theme selector */
+.theme-select {
+background: var(--panel);
+border: 1px solid var(--border);
+color: var(--muted);
+font-family: 'Share Tech Mono', monospace;
+font-size: .7rem;
+padding: 5px 8px;
+border-radius: 3px;
+cursor: pointer;
+letter-spacing: .06em;
+outline: none;
+transition: border-color .2s, color .2s;
+}
+.theme-select:hover, .theme-select:focus { border-color: var(--red); color: var(--text); }
+.theme-select option { background: #111; }
 
 @media (max-width: 700px) {
 .grid { grid-template-columns: 1fr 1fr; }
@@ -462,6 +655,20 @@ transition: all .2s;
 <header>
   <div class="logo">F1<span> LAP TRACKER</span></div>
   <div style="display:flex;align-items:center;gap:16px;">
+    <select id="theme-select" class="theme-select" onchange="applyTheme(this.value)">
+      <option value="">F1 DEFAULT</option>
+      <option value="redbull">RED BULL</option>
+      <option value="ferrari">FERRARI</option>
+      <option value="mercedes">MERCEDES</option>
+      <option value="mclaren">MCLAREN</option>
+      <option value="aston">ASTON MARTIN</option>
+      <option value="alpine">ALPINE</option>
+      <option value="williams">WILLIAMS</option>
+      <option value="racingbulls">RACING BULLS</option>
+      <option value="sauber">KICK SAUBER</option>
+      <option value="haas">HAAS</option>
+    </select>
+    <button class="btn btn-green" onclick="exportCSV()">EXPORT CSV</button>
     <button class="btn btn-danger" onclick="clearSession()">CLEAR SESSION</button>
     <div>
       <span class="status-dot" id="dot"></span>
@@ -473,8 +680,22 @@ transition: all .2s;
 <div class="grid" id="main-grid">
   <!-- filled by JS -->
 </div>
+<div id="sessions-section"></div>
 
 <script>
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function applyTheme(theme) {
+  document.body.classList.remove(
+    ...Array.from(document.body.classList).filter(c => c.startsWith('theme-'))
+  );
+  if (theme) document.body.classList.add('theme-' + theme);
+  localStorage.setItem('f1-theme', theme || '');
+}
+(function() {
+  const t = localStorage.getItem('f1-theme') || '';
+  if (t) { applyTheme(t); document.getElementById('theme-select').value = t; }
+})();
+
 let lastData = null;
 
 async function fetchState() {
@@ -489,6 +710,51 @@ async function fetchState() {
 async function clearSession() {
   await fetch('/api/clear', { method: 'POST' });
   fetchState();
+  fetchSessions();
+}
+
+function exportCSV() {
+  window.location.href = '/api/export';
+}
+
+async function fetchSessions() {
+  try {
+    const r = await fetch('/api/sessions');
+    const sessions = await r.json();
+    renderSessions(sessions);
+  } catch(e) {}
+}
+
+function renderSessions(sessions) {
+  const el = document.getElementById('sessions-section');
+  if (!sessions || sessions.length === 0) { el.innerHTML = ''; return; }
+  let rows = '';
+  for (const s of sessions) {
+    const started = s.started_at ? s.started_at.replace('T',' ').substring(0,19) : '—';
+    const ended   = s.ended_at   ? s.ended_at.replace('T',' ').substring(0,19)   : '<span style="color:var(--green)">In Progress</span>';
+    rows += `<tr>
+      <td class="lap-num">${s.id}</td>
+      <td>${s.track || '—'}</td>
+      <td>${s.session_type || '—'}</td>
+      <td>${s.weather || '—'}</td>
+      <td style="color:var(--muted);font-size:.72rem">${started}</td>
+      <td style="font-size:.72rem">${ended}</td>
+      <td><a class="export-link" href="/api/sessions/${s.id}/export">CSV</a></td>
+    </tr>`;
+  }
+  el.innerHTML = `<div class="sessions-wrap">
+    <div class="panel">
+      <div class="panel-title">Past Sessions</div>
+      <div class="lap-table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>TRACK</th><th>TYPE</th><th>WEATHER</th><th>STARTED</th><th>ENDED</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
 }
 
 function fmt(v) { return v || '--:--.---'; }
@@ -586,7 +852,9 @@ function msToLap(ms) {
 }
 
 fetchState();
+fetchSessions();
 setInterval(fetchState, 1000);
+setInterval(fetchSessions, 30000);
 </script>
 
 </body>
@@ -605,6 +873,65 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", len(payload))
             self.end_headers()
             self.wfile.write(payload)
+
+        elif parsed.path == "/api/sessions":
+            con = sqlite3.connect(DB_PATH)
+            con.row_factory = sqlite3.Row
+            rows = con.execute("SELECT * FROM sessions ORDER BY id DESC").fetchall()
+            sessions = [dict(r) for r in rows]
+            con.close()
+            payload = json.dumps(sessions).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        elif parsed.path == "/api/export":
+            # Export current in-memory session as CSV
+            with state_lock:
+                laps_snapshot = list(state["laps"])
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["Lap", "Time", "S1 (ms)", "S2 (ms)", "S3 (ms)", "Invalid", "Timestamp"])
+            for lap in laps_snapshot:
+                writer.writerow([lap["lap_num"], lap["lap_time"], lap["s1_ms"],
+                                  lap["s2_ms"], lap["s3_ms"], lap["invalid"], lap["timestamp"]])
+            csv_bytes = output.getvalue().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Disposition", 'attachment; filename="f1_current_session.csv"')
+            self.send_header("Content-Length", len(csv_bytes))
+            self.end_headers()
+            self.wfile.write(csv_bytes)
+
+        elif parsed.path.startswith("/api/sessions/") and parsed.path.endswith("/export"):
+            # Export a past session from DB as CSV  e.g. /api/sessions/3/export
+            try:
+                session_id = int(parsed.path.split("/")[3])
+            except (IndexError, ValueError):
+                self.send_response(400); self.end_headers(); return
+            con = sqlite3.connect(DB_PATH)
+            con.row_factory = sqlite3.Row
+            laps = con.execute(
+                "SELECT * FROM laps WHERE session_id=? ORDER BY lap_num", (session_id,)
+            ).fetchall()
+            con.close()
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["Lap", "Time", "S1 (ms)", "S2 (ms)", "S3 (ms)", "Invalid", "Timestamp"])
+            for lap in laps:
+                writer.writerow([lap["lap_num"], lap["lap_time"], lap["s1_ms"],
+                                  lap["s2_ms"], lap["s3_ms"], bool(lap["invalid"]), lap["timestamp"]])
+            csv_bytes = output.getvalue().encode()
+            fname = f"f1_session_{session_id}.csv"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", len(csv_bytes))
+            self.end_headers()
+            self.wfile.write(csv_bytes)
+
         else:
             body = HTML.encode()
             self.send_response(200)
@@ -616,12 +943,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/clear":
+            old_session_id = None
             with state_lock:
+                old_session_id = state["current_session_id"]
                 state["laps"].clear()
                 state["best_lap_ms"] = None
                 state["best_lap_num"] = None
                 state["current_lap"] = 1
                 state["session"]["started_at"] = None
+                state["current_session_id"] = None
+            if old_session_id is not None:
+                db_close_session(old_session_id)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -639,6 +971,10 @@ def main():
     print("    UDP IP Address : 127.0.0.1")
     print("    UDP Port       : 20777")
     print("    Broadcast Mode : Off")
+    print()
+
+    init_db()
+    print(f"💾  Database → {os.path.abspath(DB_PATH)}")
     print()
 
     # Start UDP listener in background
