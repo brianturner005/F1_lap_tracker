@@ -367,6 +367,8 @@ HTML = r"""<!DOCTYPE html>
   :root {
     --red: #e10600;
     --red-dim: #8b0400;
+    --header-tint: #0d0000;
+    --logo-glow: rgba(225,6,0,.4);
     --bg: #0a0a0a;
     --panel: #111114;
     --border: #222228;
@@ -376,6 +378,58 @@ HTML = r"""<!DOCTYPE html>
     --green: #00d68f;
     --purple: #c77dff;
   }
+
+/* ── Team themes ─────────────────────────────────────────────────────────── */
+body.theme-redbull {
+  --red:#3671C6; --red-dim:#1e3a80; --header-tint:#030614;
+  --logo-glow:rgba(54,113,198,.4);
+  --bg:#060810; --panel:#0d1020; --border:#1e2540;
+}
+body.theme-ferrari {
+  --red:#e8002d; --red-dim:#9c001e; --header-tint:#0d0005;
+  --logo-glow:rgba(232,0,45,.4);
+  --bg:#0d0606; --panel:#160a0a; --border:#2e1414;
+}
+body.theme-mercedes {
+  --red:#00d2be; --red-dim:#008c7e; --header-tint:#030d0c;
+  --logo-glow:rgba(0,210,190,.4);
+  --bg:#060d0c; --panel:#0c1614; --border:#1c3330;
+}
+body.theme-mclaren {
+  --red:#ff8000; --red-dim:#b35a00; --header-tint:#0d0700;
+  --logo-glow:rgba(255,128,0,.4);
+  --bg:#0d0800; --panel:#161008; --border:#301e08;
+}
+body.theme-aston {
+  --red:#00e060; --red-dim:#007a38; --header-tint:#020d06;
+  --logo-glow:rgba(0,224,96,.4);
+  --bg:#050d07; --panel:#0a140c; --border:#162a1a;
+}
+body.theme-alpine {
+  --red:#0093cc; --red-dim:#005e85; --header-tint:#02080f;
+  --logo-glow:rgba(0,147,204,.4);
+  --bg:#060a10; --panel:#0c1220; --border:#1c2840;
+}
+body.theme-williams {
+  --red:#37bedd; --red-dim:#1a7a94; --header-tint:#020d10;
+  --logo-glow:rgba(55,190,221,.4);
+  --bg:#060c10; --panel:#0c1520; --border:#1c3040;
+}
+body.theme-racingbulls {
+  --red:#6692ff; --red-dim:#2244cc; --header-tint:#04061a;
+  --logo-glow:rgba(102,146,255,.4);
+  --bg:#070810; --panel:#0f1125; --border:#202545;
+}
+body.theme-sauber {
+  --red:#52e252; --red-dim:#2a8c2a; --header-tint:#020d02;
+  --logo-glow:rgba(82,226,82,.4);
+  --bg:#050e05; --panel:#0a1609; --border:#163018;
+}
+body.theme-haas {
+  --red:#e8182a; --red-dim:#9e0a18; --header-tint:#0d0205;
+  --logo-glow:rgba(232,24,42,.4);
+  --bg:#0d0809; --panel:#1a1214; --border:#342428;
+}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: var(--bg);
@@ -402,7 +456,7 @@ align-items: center;
 justify-content: space-between;
 padding: 16px 24px;
 border-bottom: 2px solid var(--red);
-background: linear-gradient(90deg, #0d0000 0%, var(--panel) 40%);
+background: linear-gradient(90deg, var(--header-tint) 0%, var(--panel) 40%);
 }
 .logo {
 font-family: 'Orbitron', sans-serif;
@@ -410,7 +464,7 @@ font-weight: 900;
 font-size: 1.4rem;
 letter-spacing: .15em;
 color: var(--red);
-text-shadow: 0 0 20px rgba(225,6,0,.4);
+text-shadow: 0 0 20px var(--logo-glow);
 }
 .logo span { color: #fff; }
 .status-dot {
@@ -572,6 +626,23 @@ display: inline-block;
 }
 .export-link:hover { background: rgba(0,214,143,.1); border-color: var(--green); }
 
+/* Theme selector */
+.theme-select {
+background: var(--panel);
+border: 1px solid var(--border);
+color: var(--muted);
+font-family: 'Share Tech Mono', monospace;
+font-size: .7rem;
+padding: 5px 8px;
+border-radius: 3px;
+cursor: pointer;
+letter-spacing: .06em;
+outline: none;
+transition: border-color .2s, color .2s;
+}
+.theme-select:hover, .theme-select:focus { border-color: var(--red); color: var(--text); }
+.theme-select option { background: #111; }
+
 @media (max-width: 700px) {
 .grid { grid-template-columns: 1fr 1fr; }
 .big-num { font-size: 1.6rem; }
@@ -584,6 +655,19 @@ display: inline-block;
 <header>
   <div class="logo">F1<span> LAP TRACKER</span></div>
   <div style="display:flex;align-items:center;gap:16px;">
+    <select id="theme-select" class="theme-select" onchange="applyTheme(this.value)">
+      <option value="">F1 DEFAULT</option>
+      <option value="redbull">RED BULL</option>
+      <option value="ferrari">FERRARI</option>
+      <option value="mercedes">MERCEDES</option>
+      <option value="mclaren">MCLAREN</option>
+      <option value="aston">ASTON MARTIN</option>
+      <option value="alpine">ALPINE</option>
+      <option value="williams">WILLIAMS</option>
+      <option value="racingbulls">RACING BULLS</option>
+      <option value="sauber">KICK SAUBER</option>
+      <option value="haas">HAAS</option>
+    </select>
     <button class="btn btn-green" onclick="exportCSV()">EXPORT CSV</button>
     <button class="btn btn-danger" onclick="clearSession()">CLEAR SESSION</button>
     <div>
@@ -599,6 +683,19 @@ display: inline-block;
 <div id="sessions-section"></div>
 
 <script>
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function applyTheme(theme) {
+  document.body.classList.remove(
+    ...Array.from(document.body.classList).filter(c => c.startsWith('theme-'))
+  );
+  if (theme) document.body.classList.add('theme-' + theme);
+  localStorage.setItem('f1-theme', theme || '');
+}
+(function() {
+  const t = localStorage.getItem('f1-theme') || '';
+  if (t) { applyTheme(t); document.getElementById('theme-select').value = t; }
+})();
+
 let lastData = null;
 
 async function fetchState() {
