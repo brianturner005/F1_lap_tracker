@@ -223,13 +223,29 @@ F1 25 UDP → F1_lap_tracker.py → f1_laps.db (local)
 
 ### Deploy the backend
 
-Requirements: Azure CLI, Azure Functions Core Tools, `jq`.
+**Linux / macOS** — requires Azure CLI, Azure Functions Core Tools, and `jq`:
 
 ```bash
 cd infra
 chmod +x deploy.sh
 ./deploy.sh <resource-group-name> <azure-region>
-# e.g.: ./deploy.sh f1tracker-rg eastus
+# e.g.: ./deploy.sh pitwall-iq-rg eastus
+```
+
+**Windows** — use WSL (Windows Subsystem for Linux) or Git Bash, then run the same commands above. Install `jq` first:
+
+```powershell
+# In PowerShell (one-time setup)
+winget install jqlang.jq
+winget install Microsoft.AzureCLI
+npm install -g azure-functions-core-tools@4
+```
+
+Then open **Git Bash** or **WSL** and run:
+
+```bash
+cd infra
+./deploy.sh pitwall-iq-rg eastus
 ```
 
 The script will:
@@ -240,9 +256,17 @@ The script will:
 
 ### Configure the tracker
 
+**Linux / macOS:**
 ```bash
 export F1_LEADERBOARD_URL="https://<your-func>.azurewebsites.net/api"
 export F1_LEADERBOARD_KEY="<your-function-key>"
+python F1_lap_tracker.py
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:F1_LEADERBOARD_URL = "https://<your-func>.azurewebsites.net/api"
+$env:F1_LEADERBOARD_KEY = "<your-function-key>"
 python F1_lap_tracker.py
 ```
 
@@ -270,18 +294,33 @@ Only **one person** in your group needs to run the deploy. Everyone else just se
 
 ### Prerequisites
 
-Install the following tools:
+**Linux / macOS:**
 
-| Tool | Install |
-|---|---|
-| Azure CLI | https://learn.microsoft.com/en-us/cli/azure/install-azure-cli |
-| Azure Functions Core Tools | `npm install -g azure-functions-core-tools@4` |
-| `jq` (Linux/macOS) | `sudo apt install jq` / `brew install jq` |
-
-Log in to Azure:
 ```bash
+# Azure CLI
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash   # Ubuntu/Debian
+brew install azure-cli                                    # macOS
+
+# Azure Functions Core Tools
+npm install -g azure-functions-core-tools@4
+
+# jq (used by deploy.sh to parse output)
+sudo apt install jq   # Ubuntu/Debian
+brew install jq       # macOS
+
 az login
 ```
+
+**Windows (PowerShell):**
+
+```powershell
+winget install Microsoft.AzureCLI
+winget install jqlang.jq
+npm install -g azure-functions-core-tools@4
+az login
+```
+
+> The deploy script (`infra/deploy.sh`) is a bash script. On Windows, run it from **Git Bash** or **WSL** after installing the tools above.
 
 ---
 
@@ -318,10 +357,19 @@ Back in the Azure Portal, open your OpenAI resource:
 
 **Step 4: Set the environment variables**
 
+Linux / macOS:
 ```bash
 export AZURE_OPENAI_ENDPOINT="https://pitwall-iq-openai.openai.azure.com"
 export AZURE_OPENAI_KEY="<KEY 1 from portal>"
 export AZURE_OPENAI_DEPLOYMENT="gpt-4o"
+python F1_lap_tracker.py
+```
+
+Windows (PowerShell):
+```powershell
+$env:AZURE_OPENAI_ENDPOINT  = "https://pitwall-iq-openai.openai.azure.com"
+$env:AZURE_OPENAI_KEY       = "<KEY 1 from portal>"
+$env:AZURE_OPENAI_DEPLOYMENT = "gpt-4o"
 python F1_lap_tracker.py
 ```
 
@@ -331,11 +379,18 @@ The **AI DEBRIEF** button will now appear in the dashboard.
 
 ### Option B — Community Leaderboard (Azure Functions + Cosmos DB)
 
-Run the automated deploy script included in this repo:
+Run the automated deploy script included in this repo. On **Linux/macOS**:
 
 ```bash
 cd infra
 chmod +x deploy.sh
+./deploy.sh pitwall-iq-rg eastus
+```
+
+On **Windows**, open **Git Bash** or **WSL** (after installing prerequisites above):
+
+```bash
+cd infra
 ./deploy.sh pitwall-iq-rg eastus
 ```
 
