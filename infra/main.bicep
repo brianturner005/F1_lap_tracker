@@ -107,15 +107,15 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
 }
 
 // ---------------------------------------------------------------------------
-// App Service Plan — Consumption (Y1/Dynamic), Linux
+// App Service Plan — Basic B1, Linux (dedicated; avoids Dynamic VM quota)
 // ---------------------------------------------------------------------------
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${baseName}-plan'
   location: location
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'B1'
+    tier: 'Basic'
   }
   kind: 'linux'
   properties: {
@@ -156,6 +156,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: cosmosAccount.listConnectionStrings().connectionStrings[0].connectionString
         }
       ]
+      alwaysOn: true   // Required for dedicated (non-consumption) plans
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
     }

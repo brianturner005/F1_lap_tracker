@@ -16,7 +16,7 @@ BICEP_FILE="${SCRIPT_DIR}/main.bicep"
 FUNC_SRC_DIR="${REPO_ROOT}/leaderboard_api"
 
 echo "========================================================"
-echo " F1 Lap Tracker — Community Leaderboard Deploy"
+echo " Pitwall IQ — Community Leaderboard Deploy"
 echo "========================================================"
 echo " Resource Group : ${RESOURCE_GROUP}"
 echo " Location       : ${LOCATION}"
