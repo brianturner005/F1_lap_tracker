@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-F1 25 Lap Time Tracker
+Pitwall IQ — F1 Lap Time Tracker
 
 Listens for F1 25 UDP telemetry on port 20777 and serves a live
 dashboard at http://localhost:5000
@@ -14,12 +14,11 @@ UDP Port        : 20777
 Broadcast Mode  : Off
 
 Run:
-python f1_lap_tracker.py
+python F1_lap_tracker.py
 
 Then open http://localhost:5000 in your browser.
 
-Requirements:
-pip install flask
+Requirements: none (uses Python stdlib only)
 """
 
 import struct
@@ -38,6 +37,11 @@ import os
 # ── Leaderboard config (set via environment variables) ────────────────────────
 LEADERBOARD_URL = os.environ.get("F1_LEADERBOARD_URL", "").rstrip("/")
 LEADERBOARD_KEY = os.environ.get("F1_LEADERBOARD_KEY", "")
+
+# ── Azure OpenAI config (set via environment variables) ───────────────────────
+AOAI_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+AOAI_KEY        = os.environ.get("AZURE_OPENAI_KEY", "")
+AOAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
 # ── Shared state ─────────────────────────────────────────────────────────────
 
@@ -580,6 +584,62 @@ def leaderboard_worker():
         time.sleep(60)
         _lb_refresh()
 
+# ── AI lap debrief ────────────────────────────────────────────────────────────
+
+def _ai_debrief_sync(laps, session_info, best_lap_ms, track_pb_ms, track_pb_compound):
+    """Call Azure OpenAI chat completions and return the debrief string."""
+    from urllib.request import urlopen, Request as UReq
+
+    track     = session_info.get("track", "Unknown")
+    sess_type = session_info.get("session_type", "Unknown")
+    weather   = session_info.get("weather", "Unknown")
+    best_time = ms_to_laptime(best_lap_ms)
+    pb_time   = ms_to_laptime(track_pb_ms) if track_pb_ms else "No record"
+    pb_cmp    = f" ({track_pb_compound})" if track_pb_compound else ""
+
+    header = "Lap | Tyre   | Time         | Delta      | S1         | S2         | S3         | Valid"
+    rows   = []
+    for lap in laps:
+        valid = "INVALID" if lap.get("invalid") else "valid"
+        rows.append(
+            f"Lap {lap['lap_num']:>3} | {(lap.get('compound') or '?'):>6} | {lap['lap_time']} | "
+            f"{lap.get('delta',''):>9} | {lap.get('s1','—'):>9} | {lap.get('s2','—'):>9} | "
+            f"{lap.get('s3','—'):>9} | {valid}"
+        )
+
+    prompt = (
+        "You are a Formula 1 race engineer giving a post-session debrief to a sim racing driver.\n"
+        "Analyse the lap data below and give a concise, insightful debrief (3–5 short paragraphs).\n"
+        "Cover: pace consistency, sector weaknesses, tyre compound performance, best lap analysis, "
+        "and one actionable recommendation for the next session.\n"
+        "Use F1 engineering language. Be direct. Interpret the numbers — do not just repeat them.\n\n"
+        f"Session: {track} — {sess_type} — {weather}\n"
+        f"Session Best: {best_time}\n"
+        f"Track PB: {pb_time}{pb_cmp}\n"
+        f"Total laps: {len(laps)}\n\n"
+        f"Lap data:\n{header}\n" + "\n".join(rows)
+    )
+
+    payload = json.dumps({
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 600,
+        "temperature": 0.7,
+    }).encode()
+
+    url = (
+        f"{AOAI_ENDPOINT}/openai/deployments/{AOAI_DEPLOYMENT}"
+        "/chat/completions?api-version=2024-02-01"
+    )
+    req = UReq(url, data=payload, headers={
+        "Content-Type": "application/json",
+        "api-key": AOAI_KEY,
+    }, method="POST")
+
+    with urlopen(req, timeout=30) as resp:
+        result = json.loads(resp.read())
+
+    return result["choices"][0]["message"]["content"].strip()
+
 def udp_listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -613,7 +673,7 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>F1 Lap Tracker</title>
+<title>Pitwall IQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
@@ -921,6 +981,14 @@ tr.lb-player td { color: var(--green); }
 td.lb-rank { color: var(--muted); font-size: .7rem; width: 32px; }
 td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-weight: 700; }
 
+/* AI Debrief panel */
+.debrief-panel { border-color: var(--purple) !important; }
+.debrief-panel::before { background: var(--purple) !important; }
+.debrief-body { padding: 4px 0; }
+.debrief-para { font-size: .82rem; line-height: 1.75; color: var(--text); margin-bottom: 14px; }
+.debrief-para:last-child { margin-bottom: 0; }
+.debrief-loading { color: var(--muted); font-size: .8rem; padding: 20px 0; animation: pulse 1.5s infinite; }
+
 /* Theme selector */
 .theme-select {
 background: var(--panel);
@@ -948,7 +1016,7 @@ transition: border-color .2s, color .2s;
 </head>
 <body>
 <header>
-  <div class="logo">F1<span> LAP TRACKER</span></div>
+  <div class="logo">PITWALL<span> IQ</span></div>
   <div style="display:flex;align-items:center;gap:16px;">
     <select id="theme-select" class="theme-select" onchange="applyTheme(this.value)">
       <option value="">F1 DEFAULT</option>
@@ -967,6 +1035,7 @@ transition: border-color .2s, color .2s;
       <input id="lb-name" type="text" class="lb-input" placeholder="Display name" maxlength="32">
       <button id="lb-toggle" class="btn btn-toggle" onclick="toggleLBOptIn()">SUBMIT PBs: OFF</button>
     </div>
+    <button id="debrief-btn" class="btn" style="display:none;border-color:#7b5ea7;color:var(--purple)" onclick="requestDebrief()">AI DEBRIEF</button>
     <button class="btn btn-green" onclick="exportCSV()">EXPORT CSV</button>
     <button class="btn btn-danger" onclick="clearSession()">CLEAR SESSION</button>
     <div>
@@ -981,6 +1050,7 @@ transition: border-color .2s, color .2s;
 </div>
 <div id="pbs-section"></div>
 <div id="lb-section"></div>
+<div id="debrief-section"></div>
 <div id="sessions-section"></div>
 
 <script>
@@ -1068,6 +1138,55 @@ function renderLeaderboard(d) {
       </div>
     </div>
   </div>`;
+}
+
+// ── AI Debrief ────────────────────────────────────────────────────────────────
+async function initAI() {
+  try {
+    const r = await fetch('/api/ai-config');
+    const c = await r.json();
+    if (c.enabled) {
+      document.getElementById('debrief-btn').style.display = 'inline-block';
+    }
+  } catch(e) {}
+}
+
+async function requestDebrief() {
+  const btn = document.getElementById('debrief-btn');
+  const section = document.getElementById('debrief-section');
+  btn.textContent = 'GENERATING...';
+  btn.disabled = true;
+  section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
+    <div class="panel-title">AI Debrief — Race Engineer</div>
+    <div class="debrief-loading">Analysing your session data…</div>
+  </div></div>`;
+  try {
+    const r = await fetch('/api/debrief', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    renderDebrief(d.debrief);
+  } catch(e) {
+    section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
+      <div class="panel-title">AI Debrief — Race Engineer</div>
+      <div style="color:var(--red);font-size:.8rem">Error: ${e.message}</div>
+    </div></div>`;
+  } finally {
+    btn.textContent = 'AI DEBRIEF';
+    btn.disabled = false;
+  }
+}
+
+function renderDebrief(text) {
+  const section = document.getElementById('debrief-section');
+  const paras = text.split(/\n\n+/).filter(p => p.trim());
+  const html = paras.map(p => `<p class="debrief-para">${p.replace(/\n/g,'<br>')}</p>`).join('');
+  section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
+    <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>AI Debrief — Race Engineer</span>
+      <button class="btn" onclick="document.getElementById('debrief-section').innerHTML=''">DISMISS</button>
+    </div>
+    <div class="debrief-body">${html}</div>
+  </div></div>`;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -1297,6 +1416,7 @@ function msToLap(ms) {
 fetchState();
 fetchPBs();
 initLB();
+initAI();
 fetchSessions();
 setInterval(fetchState, 1000);
 setInterval(fetchPBs, 60000);
@@ -1397,6 +1517,14 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
 
+        elif parsed.path == "/api/ai-config":
+            payload = json.dumps({"enabled": bool(AOAI_ENDPOINT and AOAI_KEY)}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+
         elif parsed.path == "/api/lb-config":
             with state_lock:
                 cfg = {
@@ -1438,6 +1566,45 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
 
+        elif parsed.path == "/api/debrief":
+            if not (AOAI_ENDPOINT and AOAI_KEY):
+                err = json.dumps({"error": "Azure OpenAI not configured"}).encode()
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(err))
+                self.end_headers()
+                self.wfile.write(err)
+                return
+            with state_lock:
+                laps_snap    = list(state["laps"])
+                session_snap = dict(state["session"])
+                best_ms      = state["best_lap_ms"]
+                track_pb_ms  = state["track_pb_ms"]
+                track_pb_cmp = state["track_pb_compound"]
+            if not laps_snap:
+                err = json.dumps({"error": "No laps recorded yet"}).encode()
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(err))
+                self.end_headers()
+                self.wfile.write(err)
+                return
+            try:
+                text = _ai_debrief_sync(laps_snap, session_snap, best_ms, track_pb_ms, track_pb_cmp)
+                payload = json.dumps({"debrief": text}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(payload))
+                self.end_headers()
+                self.wfile.write(payload)
+            except Exception as exc:
+                err = json.dumps({"error": str(exc)}).encode()
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(err))
+                self.end_headers()
+                self.wfile.write(err)
+
         elif parsed.path == "/api/lb-settings":
             length = int(self.headers.get("Content-Length", 0))
             body   = json.loads(self.rfile.read(length))
@@ -1455,7 +1622,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     print("=" * 50)
-    print("  F1 Lap Tracker")
+    print("  Pitwall IQ — F1 Lap Time Tracker")
     print("=" * 50)
     print()
     print("IN-GAME SETUP (F1 25):")
@@ -1477,6 +1644,8 @@ def main():
         state["leaderboard_opt_in"] = cfg["leaderboard_opt_in"]
         state["display_name"]      = cfg["display_name"]
         state["leaderboard_enabled"] = bool(LEADERBOARD_URL)
+    if AOAI_ENDPOINT and AOAI_KEY:
+        print(f"🤖  AI Debrief  → {AOAI_DEPLOYMENT} @ {AOAI_ENDPOINT}")
     if LEADERBOARD_URL:
         print(f"🌍  Leaderboard → {LEADERBOARD_URL}")
         lb_thread = threading.Thread(target=leaderboard_worker, daemon=True)
