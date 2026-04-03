@@ -984,6 +984,92 @@ transition: border-color .2s, color .2s;
 <div id="sessions-section"></div>
 
 <script>
+// ── Community leaderboard ─────────────────────────────────────────────────────
+let _lbOptIn = false;
+
+async function initLB() {
+  try {
+    const r = await fetch('/api/lb-config');
+    const c = await r.json();
+    if (!c.enabled) return;
+    document.getElementById('lb-controls').style.display = 'flex';
+    document.getElementById('lb-name').value = c.display_name || '';
+    _lbOptIn = c.opt_in;
+    _updateToggle();
+    fetchLeaderboard();
+  } catch(e) {}
+}
+
+function _updateToggle() {
+  const btn = document.getElementById('lb-toggle');
+  if (!btn) return;
+  btn.textContent = _lbOptIn ? 'SUBMIT PBs: ON' : 'SUBMIT PBs: OFF';
+  btn.className   = 'btn btn-toggle' + (_lbOptIn ? ' active' : '');
+}
+
+async function toggleLBOptIn() {
+  _lbOptIn = !_lbOptIn;
+  _updateToggle();
+  const name = document.getElementById('lb-name').value.trim() || 'Anonymous';
+  await fetch('/api/lb-settings', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({opt_in: _lbOptIn, display_name: name}),
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const nameInput = document.getElementById('lb-name');
+  if (nameInput) {
+    nameInput.addEventListener('change', async () => {
+      await fetch('/api/lb-settings', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({opt_in: _lbOptIn, display_name: nameInput.value.trim() || 'Anonymous'}),
+      });
+    });
+  }
+});
+
+async function fetchLeaderboard() {
+  try {
+    const r = await fetch('/api/leaderboard');
+    const d = await r.json();
+    renderLeaderboard(d);
+  } catch(e) {}
+}
+
+function renderLeaderboard(d) {
+  const el = document.getElementById('lb-section');
+  if (!d || !d.entries || d.entries.length === 0) { el.innerHTML = ''; return; }
+  let rows = '';
+  for (const e of d.entries) {
+    const top3 = e.rank <= 3 ? 'top3' : '';
+    rows += `<tr class="${e.is_player ? 'lb-player' : ''}">
+      <td class="lb-rank ${top3}">${e.rank}</td>
+      <td class="lap-time" style="${e.is_player ? '' : ''}">${e.lap_time}</td>
+      <td>${compoundPill(e.compound)}</td>
+      <td style="font-size:.78rem">${e.display_name}</td>
+    </tr>`;
+  }
+  const title = `${d.track} · ${d.session_type}`;
+  const rankNote = d.player_rank ? ` <span style="color:var(--green);font-size:.6rem">YOUR RANK: #${d.player_rank}</span>` : '';
+  el.innerHTML = `<div class="lb-wrap">
+    <div class="panel">
+      <div class="panel-title" style="display:flex;justify-content:space-between;">
+        <span>Community Leaderboard — ${title}</span>
+        ${rankNote}
+      </div>
+      <div class="lap-table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>TIME</th><th>TYRE</th><th>DRIVER</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
 // ── Theme ─────────────────────────────────────────────────────────────────────
 function applyTheme(theme) {
   document.body.classList.remove(
@@ -1210,10 +1296,12 @@ function msToLap(ms) {
 
 fetchState();
 fetchPBs();
+initLB();
 fetchSessions();
 setInterval(fetchState, 1000);
 setInterval(fetchPBs, 60000);
 setInterval(fetchSessions, 30000);
+setInterval(fetchLeaderboard, 60000);
 </script>
 
 </body>
