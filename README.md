@@ -284,9 +284,11 @@ Only **one person** in your group needs to run the deploy. Everyone else just se
 | Resource | Estimated monthly cost |
 |---|---|
 | Cosmos DB (serverless) | ~$0–$1 for light use |
-| Azure Functions (Y1/consumption) | Free for light use |
+| App Service Plan (B1 Basic) | ~$13/month |
 | Storage Account | < $0.10 |
-| **Total** | **< $2/month** for a small group |
+| **Total** | **~$13–$14/month** |
+
+> The Bicep uses a **Basic B1** dedicated plan rather than the consumption (Y1/Dynamic) tier. Many personal/trial Azure subscriptions have a Dynamic VM quota of 0, which blocks the consumption plan. B1 avoids that restriction entirely.
 
 -----
 
