@@ -897,6 +897,30 @@ border: 1px solid transparent;
 .cpill-I { background:rgba(0,200,90,.15);   color:#00c85a; border-color:rgba(0,200,90,.35); }
 .cpill-W { background:rgba(60,130,255,.15); color:#5599ff; border-color:rgba(60,130,255,.35); }
 
+/* Leaderboard settings in header */
+.lb-input {
+background: var(--panel);
+border: 1px solid var(--border);
+color: var(--text);
+font-family: 'Share Tech Mono', monospace;
+font-size: .7rem;
+padding: 5px 8px;
+border-radius: 3px;
+outline: none;
+width: 130px;
+transition: border-color .2s;
+}
+.lb-input:focus { border-color: var(--red); }
+.lb-input::placeholder { color: var(--muted); }
+.btn-toggle.active { border-color: var(--green); color: var(--green); }
+
+/* Community leaderboard panel */
+.lb-wrap { padding: 0 16px 16px; max-width: 1200px; margin: 0 auto; }
+tr.lb-player { background: rgba(0,214,143,.08); }
+tr.lb-player td { color: var(--green); }
+td.lb-rank { color: var(--muted); font-size: .7rem; width: 32px; }
+td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-weight: 700; }
+
 /* Theme selector */
 .theme-select {
 background: var(--panel);
@@ -939,6 +963,10 @@ transition: border-color .2s, color .2s;
       <option value="sauber">KICK SAUBER</option>
       <option value="haas">HAAS</option>
     </select>
+    <div id="lb-controls" style="display:none;align-items:center;gap:8px;">
+      <input id="lb-name" type="text" class="lb-input" placeholder="Display name" maxlength="32">
+      <button id="lb-toggle" class="btn btn-toggle" onclick="toggleLBOptIn()">SUBMIT PBs: OFF</button>
+    </div>
     <button class="btn btn-green" onclick="exportCSV()">EXPORT CSV</button>
     <button class="btn btn-danger" onclick="clearSession()">CLEAR SESSION</button>
     <div>
@@ -952,6 +980,7 @@ transition: border-color .2s, color .2s;
   <!-- filled by JS -->
 </div>
 <div id="pbs-section"></div>
+<div id="lb-section"></div>
 <div id="sessions-section"></div>
 
 <script>
