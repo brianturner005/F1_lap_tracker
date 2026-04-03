@@ -35,6 +35,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import os
 
+# ── Leaderboard config (set via environment variables) ────────────────────────
+LEADERBOARD_URL = os.environ.get("F1_LEADERBOARD_URL", "").rstrip("/")
+LEADERBOARD_KEY = os.environ.get("F1_LEADERBOARD_KEY", "")
+
 # ── Shared state ─────────────────────────────────────────────────────────────
 
 state_lock = threading.Lock()
@@ -56,6 +60,11 @@ state = {
     "track_pb_ms": None,
     "track_pb_time": None,
     "track_pb_compound": None,
+    "leaderboard_opt_in": False,
+    "display_name": "Anonymous",
+    "player_id": None,
+    "leaderboard": None,       # cached community leaderboard response
+    "leaderboard_enabled": False,  # True when LEADERBOARD_URL is set
     "udp_connected": False,
     "player_position": 0,
     "total_laps": 0,
@@ -211,6 +220,39 @@ def db_get_all_pbs():
     ).fetchall()
     con.close()
     return [dict(r) for r in rows]
+
+# ── Config table (player identity & leaderboard prefs) ───────────────────────
+
+def init_config():
+    """Create config table, generate player_id if needed, return config dict."""
+    import uuid as _uuid
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS config (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    row = con.execute("SELECT value FROM config WHERE key='player_id'").fetchone()
+    if row:
+        player_id = row[0]
+    else:
+        player_id = str(_uuid.uuid4())
+        con.execute("INSERT INTO config (key,value) VALUES ('player_id',?)", (player_id,))
+    def _get(k, d):
+        r = con.execute("SELECT value FROM config WHERE key=?", (k,)).fetchone()
+        return r[0] if r else d
+    opt_in      = _get("leaderboard_opt_in", "0") == "1"
+    display_name = _get("display_name", "Anonymous")
+    con.commit()
+    con.close()
+    return {"player_id": player_id, "leaderboard_opt_in": opt_in, "display_name": display_name}
+
+def db_save_config(key, value):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("INSERT OR REPLACE INTO config (key,value) VALUES (?,?)", (key, str(value)))
+    con.commit()
+    con.close()
 
 def ms_to_laptime(ms):
     if ms is None or ms <= 0:
@@ -444,6 +486,21 @@ def parse_lap_data_packet(data, player_idx):
             db_save_lap(save_session_id, lap_record)
         if save_pb_data is not None:
             db_upsert_track_pb(*save_pb_data)
+            with state_lock:
+                _opt_in  = state.get("leaderboard_opt_in", False)
+                _pid     = state.get("player_id", "")
+                _name    = state.get("display_name", "Anonymous")
+            if _opt_in and LEADERBOARD_URL:
+                _lb_post({
+                    "player_id":    _pid,
+                    "display_name": _name,
+                    "track":        save_pb_data[0],
+                    "session_type": save_pb_data[1],
+                    "lap_time_ms":  save_pb_data[2],
+                    "lap_time":     save_pb_data[3],
+                    "compound":     save_pb_data[4],
+                    "submitted_at": save_pb_data[6],
+                })
     except Exception:
         pass
 
@@ -463,6 +520,65 @@ def parse_car_status_packet(data, player_idx):
             state["current_compound"] = compound_name
     except Exception:
         pass
+
+# ── Community leaderboard ─────────────────────────────────────────────────────
+
+def _lb_post(payload):
+    """POST payload dict to leaderboard /api/submit in background."""
+    if not LEADERBOARD_URL:
+        return
+    def _run():
+        try:
+            from urllib.request import urlopen, Request as UReq
+            data = json.dumps(payload).encode()
+            req = UReq(
+                f"{LEADERBOARD_URL}/api/submit",
+                data=data,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-functions-key": LEADERBOARD_KEY,
+                },
+                method="POST",
+            )
+            with urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read())
+                if result.get("rank"):
+                    with state_lock:
+                        lb = state.get("leaderboard") or {}
+                        lb["player_rank"] = result["rank"]
+                        state["leaderboard"] = lb
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+def _lb_refresh():
+    """Fetch leaderboard for current track from Azure and cache in state."""
+    if not LEADERBOARD_URL:
+        return
+    try:
+        from urllib.request import urlopen
+        from urllib.parse import quote
+        with state_lock:
+            track        = state["session"].get("track", "Unknown")
+            session_type = state["session"].get("session_type", "Unknown")
+            player_id    = state.get("player_id") or ""
+        if track in ("Unknown", None):
+            return
+        url = (f"{LEADERBOARD_URL}/api/leaderboard"
+               f"/{quote(track, safe='')}/{quote(session_type, safe='')}"
+               f"?player_id={player_id}")
+        with urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read())
+        with state_lock:
+            state["leaderboard"] = data
+    except Exception:
+        pass
+
+def leaderboard_worker():
+    """Background thread: refresh community leaderboard every 60 s."""
+    while True:
+        time.sleep(60)
+        _lb_refresh()
 
 def udp_listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1155,6 +1271,29 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(csv_bytes)
 
+        elif parsed.path == "/api/leaderboard":
+            with state_lock:
+                payload = json.dumps(state.get("leaderboard") or {}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        elif parsed.path == "/api/lb-config":
+            with state_lock:
+                cfg = {
+                    "enabled":      bool(LEADERBOARD_URL),
+                    "opt_in":       state.get("leaderboard_opt_in", False),
+                    "display_name": state.get("display_name", "Anonymous"),
+                }
+            payload = json.dumps(cfg).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+
         else:
             body = HTML.encode()
             self.send_response(200)
@@ -1182,6 +1321,21 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
 
+        elif parsed.path == "/api/lb-settings":
+            length = int(self.headers.get("Content-Length", 0))
+            body   = json.loads(self.rfile.read(length))
+            opt_in       = bool(body.get("opt_in", False))
+            display_name = str(body.get("display_name", "Anonymous"))[:32].strip() or "Anonymous"
+            with state_lock:
+                state["leaderboard_opt_in"] = opt_in
+                state["display_name"]       = display_name
+            db_save_config("leaderboard_opt_in", "1" if opt_in else "0")
+            db_save_config("display_name", display_name)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+
 def main():
     print("=" * 50)
     print("  F1 Lap Tracker")
@@ -1199,6 +1353,18 @@ def main():
     init_db()
     print(f"💾  Database → {os.path.abspath(DB_PATH)}")
     print()
+
+    cfg = init_config()
+    with state_lock:
+        state["player_id"]         = cfg["player_id"]
+        state["leaderboard_opt_in"] = cfg["leaderboard_opt_in"]
+        state["display_name"]      = cfg["display_name"]
+        state["leaderboard_enabled"] = bool(LEADERBOARD_URL)
+    if LEADERBOARD_URL:
+        print(f"🌍  Leaderboard → {LEADERBOARD_URL}")
+        lb_thread = threading.Thread(target=leaderboard_worker, daemon=True)
+        lb_thread.start()
+        _lb_refresh()   # immediate first fetch
 
     # Start UDP listener in background
     t = threading.Thread(target=udp_listener, daemon=True)
