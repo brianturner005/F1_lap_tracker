@@ -72,6 +72,7 @@ state = {
     "udp_connected": False,
     "player_position": 0,
     "total_laps": 0,
+    "last_recorded_lap_ms": 0,  # tracks last lap time we saved, to catch final lap
 }
 
 TRACK_IDS = {
@@ -429,8 +430,15 @@ def parse_lap_data_packet(data, player_idx):
             prev_lap = state["current_lap"]
             state["current_lap"] = cur_lap_num
 
-            # New lap completed
-            if last_lap_ms > 0 and cur_lap_num > prev_lap:
+            # New lap completed.
+            # Primary trigger: lap counter incremented (mid-race laps).
+            # Secondary trigger: last_lap_ms changed to an unseen value —
+            # catches the FINAL lap, where cur_lap_num never increments
+            # because there is no next lap to start.
+            _new_by_lap_num = cur_lap_num > prev_lap
+            _new_by_time    = (last_lap_ms > 0
+                                and last_lap_ms != state["last_recorded_lap_ms"])
+            if last_lap_ms > 0 and (_new_by_lap_num or _new_by_time):
                 s1_val = state["last_sector"][0]
                 s2_val = state["last_sector"][1]
                 state["last_sector"] = [None, None, None]  # reset for new lap
@@ -451,6 +459,7 @@ def parse_lap_data_packet(data, player_idx):
                 lap_record["s2"] = ms_to_laptime(lap_record["s2_ms"])
                 lap_record["s3"] = ms_to_laptime(lap_record["s3_ms"])
 
+                state["last_recorded_lap_ms"] = last_lap_ms
                 state["laps"].append(lap_record)
 
                 # Update session best (valid laps only)
@@ -1557,6 +1566,7 @@ class Handler(BaseHTTPRequestHandler):
                 state["best_lap_ms"] = None
                 state["best_lap_num"] = None
                 state["current_lap"] = 1
+                state["last_recorded_lap_ms"] = 0
                 state["session"]["started_at"] = None
                 state["current_session_id"] = None
             if old_session_id is not None:
@@ -1665,6 +1675,10 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
+        with state_lock:
+            open_session_id = state.get("current_session_id")
+        if open_session_id is not None:
+            db_close_session(open_session_id)
         print("\nStopped.")
 
 if __name__ == "__main__":
