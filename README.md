@@ -258,14 +258,14 @@ The script will:
 
 **Linux / macOS:**
 ```bash
-export F1_LEADERBOARD_URL="https://<your-func>.azurewebsites.net/api"
+export F1_LEADERBOARD_URL="https://<your-func>.azurewebsites.net"
 export F1_LEADERBOARD_KEY="<your-function-key>"
 python F1_lap_tracker.py
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:F1_LEADERBOARD_URL = "https://<your-func>.azurewebsites.net/api"
+$env:F1_LEADERBOARD_URL = "https://<your-func>.azurewebsites.net"
 $env:F1_LEADERBOARD_KEY = "<your-function-key>"
 python F1_lap_tracker.py
 ```

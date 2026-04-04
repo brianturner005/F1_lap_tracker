@@ -36,6 +36,10 @@ import os
 
 # ── Leaderboard config (set via environment variables) ────────────────────────
 LEADERBOARD_URL = os.environ.get("F1_LEADERBOARD_URL", "").rstrip("/")
+# Normalise: strip trailing /api so the URL works whether or not the user
+# included it (the code appends /api/submit etc. itself).
+if LEADERBOARD_URL.endswith("/api"):
+    LEADERBOARD_URL = LEADERBOARD_URL[:-4]
 LEADERBOARD_KEY = os.environ.get("F1_LEADERBOARD_KEY", "")
 
 # ── Azure OpenAI config (set via environment variables) ───────────────────────
