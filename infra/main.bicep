@@ -140,6 +140,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
       linuxFxVersion: 'Python|3.11'
       appSettings: [
         {
+          name: 'WEBSITE_RUN_FROM_PACKAGE'
+          value: '1'
+        }
+        {
           name: 'AzureWebJobsStorage'
           value: storageConnectionString
         }
