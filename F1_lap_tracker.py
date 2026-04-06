@@ -975,7 +975,7 @@ td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-
 
 /* Logo + beta badge */
 .logo-wrap { display:flex; align-items:center; gap:10px; }
-.logo-img { height:110px; width:auto; display:block; mix-blend-mode: multiply; }
+.logo-img { height:180px; width:auto; display:block; mix-blend-mode: multiply; }
 .beta-badge {
   font-family: 'Orbitron', sans-serif;
   font-size: .52rem;
