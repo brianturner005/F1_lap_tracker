@@ -758,10 +758,11 @@ background: linear-gradient(90deg, var(--header-tint) 0%, var(--panel) 40%);
 .logo {
 font-family: 'Orbitron', sans-serif;
 font-weight: 900;
-font-size: 1.4rem;
-letter-spacing: .15em;
+font-size: 2.2rem;
+letter-spacing: .12em;
 color: var(--red);
-text-shadow: 0 0 20px var(--logo-glow);
+text-shadow: 0 0 28px var(--logo-glow);
+line-height: 1;
 }
 .logo span { color: #fff; }
 .status-dot {
@@ -1019,9 +1020,7 @@ transition: border-color .2s, color .2s;
 <body>
 <header>
   <div class="logo-wrap">
-    <img src="/logo" alt="Pitwall IQ" class="logo-img"
-         onerror="this.style.display='none';document.getElementById('logo-text').style.display='block'">
-    <div id="logo-text" class="logo" style="display:none">PITWALL<span> IQ</span></div>
+    <div class="logo">PITWALL<span> IQ</span></div>
     <span class="beta-badge">IN DEVELOPMENT</span>
   </div>
   <div style="display:flex;align-items:center;gap:16px;">
