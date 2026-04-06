@@ -10,16 +10,18 @@ RESOURCE_GROUP="${1:-${RESOURCE_GROUP:-f1tracker-rg}}"
 LOCATION="${2:-${LOCATION:-westeurope}}"
 BASE_NAME="${3:-${BASE_NAME:-f1tracker}}"
 
-# Azure OpenAI credentials for the AI debrief proxy.
-# Set via env vars or you will be prompted interactively.
-if [[ -z "${AOAI_ENDPOINT:-}" ]]; then
-  read -rp "Azure OpenAI endpoint (e.g. https://your-resource.openai.azure.com): " AOAI_ENDPOINT
-fi
-if [[ -z "${AOAI_KEY:-}" ]]; then
-  read -rsp "Azure OpenAI API key: " AOAI_KEY
-  echo
-fi
+# Azure OpenAI credentials for the AI debrief proxy (optional).
+# Leave blank to skip — you can re-run deploy.sh later once quota is approved
+# and the credentials will be added to the Function App settings.
+AOAI_ENDPOINT="${AOAI_ENDPOINT:-}"
+AOAI_KEY="${AOAI_KEY:-}"
 AOAI_DEPLOYMENT="${AOAI_DEPLOYMENT:-gpt-4o-mini}"
+
+if [[ -z "${AOAI_ENDPOINT}" ]]; then
+  echo "ℹ️   Azure OpenAI endpoint not set — AI debrief will be disabled until you re-run this script with credentials."
+  echo "     Set AOAI_ENDPOINT and AOAI_KEY env vars and re-run to enable it."
+  echo ""
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
