@@ -42,10 +42,14 @@ if LEADERBOARD_URL.endswith("/api"):
     LEADERBOARD_URL = LEADERBOARD_URL[:-4]
 LEADERBOARD_KEY = os.environ.get("F1_LEADERBOARD_KEY", "")
 
-# ── Azure OpenAI config (set via environment variables) ───────────────────────
-AOAI_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-AOAI_KEY        = os.environ.get("AZURE_OPENAI_KEY", "")
-AOAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+# ── AI debrief proxy URL ──────────────────────────────────────────────────────
+# Points to the Pitwall IQ Azure Function that proxies AI debrief requests.
+# Users need no API keys — the function holds them server-side.
+# Set PITWALL_PROXY_URL env var to override (e.g. for local dev).
+PITWALL_PROXY_URL = os.environ.get(
+    "PITWALL_PROXY_URL",
+    "https://f1tracker-func-6v3lqkyuhxwkc.azurewebsites.net",
+).rstrip("/")
 
 # ── Shared state ─────────────────────────────────────────────────────────────
 
@@ -597,61 +601,28 @@ def leaderboard_worker():
         time.sleep(60)
         _lb_refresh()
 
-# ── AI lap debrief ────────────────────────────────────────────────────────────
+# ── AI lap debrief (proxied via Pitwall IQ Azure Function) ────────────────────
 
-def _ai_debrief_sync(laps, session_info, best_lap_ms, track_pb_ms, track_pb_compound):
-    """Call Azure OpenAI chat completions and return the debrief string."""
+def _ai_debrief_proxy(laps, session_info, best_lap_ms, track_pb_ms, track_pb_compound, player_id):
+    """POST lap data to the Pitwall IQ proxy Function and return (debrief_text, remaining)."""
     from urllib.request import urlopen, Request as UReq
-
-    track     = session_info.get("track", "Unknown")
-    sess_type = session_info.get("session_type", "Unknown")
-    weather   = session_info.get("weather", "Unknown")
-    best_time = ms_to_laptime(best_lap_ms)
-    pb_time   = ms_to_laptime(track_pb_ms) if track_pb_ms else "No record"
-    pb_cmp    = f" ({track_pb_compound})" if track_pb_compound else ""
-
-    header = "Lap | Tyre   | Time         | Delta      | S1         | S2         | S3         | Valid"
-    rows   = []
-    for lap in laps:
-        valid = "INVALID" if lap.get("invalid") else "valid"
-        rows.append(
-            f"Lap {lap['lap_num']:>3} | {(lap.get('compound') or '?'):>6} | {lap['lap_time']} | "
-            f"{lap.get('delta',''):>9} | {lap.get('s1','—'):>9} | {lap.get('s2','—'):>9} | "
-            f"{lap.get('s3','—'):>9} | {valid}"
-        )
-
-    prompt = (
-        "You are a Formula 1 race engineer giving a post-session debrief to a sim racing driver.\n"
-        "Analyse the lap data below and give a concise, insightful debrief (3–5 short paragraphs).\n"
-        "Cover: pace consistency, sector weaknesses, tyre compound performance, best lap analysis, "
-        "and one actionable recommendation for the next session.\n"
-        "Use F1 engineering language. Be direct. Interpret the numbers — do not just repeat them.\n\n"
-        f"Session: {track} — {sess_type} — {weather}\n"
-        f"Session Best: {best_time}\n"
-        f"Track PB: {pb_time}{pb_cmp}\n"
-        f"Total laps: {len(laps)}\n\n"
-        f"Lap data:\n{header}\n" + "\n".join(rows)
-    )
-
     payload = json.dumps({
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 600,
-        "temperature": 0.7,
+        "player_id":      player_id,
+        "laps":           laps,
+        "session":        session_info,
+        "best_lap_ms":    best_lap_ms,
+        "track_pb_ms":    track_pb_ms,
+        "track_pb_compound": track_pb_compound,
     }).encode()
-
-    url = (
-        f"{AOAI_ENDPOINT}/openai/deployments/{AOAI_DEPLOYMENT}"
-        "/chat/completions?api-version=2024-02-01"
+    req = UReq(
+        f"{PITWALL_PROXY_URL}/api/debrief",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
-    req = UReq(url, data=payload, headers={
-        "Content-Type": "application/json",
-        "api-key": AOAI_KEY,
-    }, method="POST")
-
-    with urlopen(req, timeout=30) as resp:
+    with urlopen(req, timeout=35) as resp:
         result = json.loads(resp.read())
-
-    return result["choices"][0]["message"]["content"].strip()
+    return result["debrief"], result.get("remaining")
 
 def udp_listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1177,7 +1148,7 @@ async function requestDebrief() {
     const r = await fetch('/api/debrief', { method: 'POST' });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    renderDebrief(d.debrief);
+    renderDebrief(d);
   } catch(e) {
     section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
       <div class="panel-title">AI Debrief — Race Engineer</div>
@@ -1189,14 +1160,17 @@ async function requestDebrief() {
   }
 }
 
-function renderDebrief(text) {
+function renderDebrief(data) {
   const section = document.getElementById('debrief-section');
-  const paras = text.split(/\n\n+/).filter(p => p.trim());
+  const paras = data.debrief.split(/\n\n+/).filter(p => p.trim());
   const html = paras.map(p => `<p class="debrief-para">${p.replace(/\n/g,'<br>')}</p>`).join('');
+  const remainingNote = data.remaining != null
+    ? `<span style="color:var(--muted);font-size:.65rem">${data.remaining} debrief${data.remaining !== 1 ? 's' : ''} remaining today</span>`
+    : '';
   section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
     <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>AI Debrief — Race Engineer</span>
-      <button class="btn" onclick="document.getElementById('debrief-section').innerHTML=''">DISMISS</button>
+      <div style="display:flex;align-items:center;gap:12px;">${remainingNote}<button class="btn" onclick="document.getElementById('debrief-section').innerHTML=''">DISMISS</button></div>
     </div>
     <div class="debrief-body">${html}</div>
   </div></div>`;
@@ -1531,7 +1505,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
 
         elif parsed.path == "/api/ai-config":
-            payload = json.dumps({"enabled": bool(AOAI_ENDPOINT and AOAI_KEY)}).encode()
+            payload = json.dumps({"enabled": bool(PITWALL_PROXY_URL)}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", len(payload))
@@ -1581,20 +1555,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b'{"ok":true}')
 
         elif parsed.path == "/api/debrief":
-            if not (AOAI_ENDPOINT and AOAI_KEY):
-                err = json.dumps({"error": "Azure OpenAI not configured"}).encode()
-                self.send_response(503)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", len(err))
-                self.end_headers()
-                self.wfile.write(err)
-                return
             with state_lock:
                 laps_snap    = list(state["laps"])
                 session_snap = dict(state["session"])
                 best_ms      = state["best_lap_ms"]
                 track_pb_ms  = state["track_pb_ms"]
                 track_pb_cmp = state["track_pb_compound"]
+                player_id    = state.get("player_id", "")
             if not laps_snap:
                 err = json.dumps({"error": "No laps recorded yet"}).encode()
                 self.send_response(400)
@@ -1604,13 +1571,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(err)
                 return
             try:
-                text = _ai_debrief_sync(laps_snap, session_snap, best_ms, track_pb_ms, track_pb_cmp)
-                payload = json.dumps({"debrief": text}).encode()
+                text, remaining = _ai_debrief_proxy(
+                    laps_snap, session_snap, best_ms, track_pb_ms, track_pb_cmp, player_id
+                )
+                out = json.dumps({"debrief": text, "remaining": remaining}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", len(payload))
+                self.send_header("Content-Length", len(out))
                 self.end_headers()
-                self.wfile.write(payload)
+                self.wfile.write(out)
             except Exception as exc:
                 err = json.dumps({"error": str(exc)}).encode()
                 self.send_response(500)
@@ -1658,8 +1627,8 @@ def main():
         state["leaderboard_opt_in"] = cfg["leaderboard_opt_in"]
         state["display_name"]      = cfg["display_name"]
         state["leaderboard_enabled"] = bool(LEADERBOARD_URL)
-    if AOAI_ENDPOINT and AOAI_KEY:
-        print(f"🤖  AI Debrief  → {AOAI_DEPLOYMENT} @ {AOAI_ENDPOINT}")
+    if PITWALL_PROXY_URL:
+        print(f"🤖  AI Debrief  → {PITWALL_PROXY_URL}")
     if LEADERBOARD_URL:
         print(f"🌍  Leaderboard → {LEADERBOARD_URL}")
         lb_thread = threading.Thread(target=leaderboard_worker, daemon=True)

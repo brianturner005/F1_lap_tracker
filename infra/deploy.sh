@@ -10,6 +10,17 @@ RESOURCE_GROUP="${1:-${RESOURCE_GROUP:-f1tracker-rg}}"
 LOCATION="${2:-${LOCATION:-westeurope}}"
 BASE_NAME="${3:-${BASE_NAME:-f1tracker}}"
 
+# Azure OpenAI credentials for the AI debrief proxy.
+# Set via env vars or you will be prompted interactively.
+if [[ -z "${AOAI_ENDPOINT:-}" ]]; then
+  read -rp "Azure OpenAI endpoint (e.g. https://your-resource.openai.azure.com): " AOAI_ENDPOINT
+fi
+if [[ -z "${AOAI_KEY:-}" ]]; then
+  read -rsp "Azure OpenAI API key: " AOAI_KEY
+  echo
+fi
+AOAI_DEPLOYMENT="${AOAI_DEPLOYMENT:-gpt-4o-mini}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BICEP_FILE="${SCRIPT_DIR}/main.bicep"
@@ -54,6 +65,7 @@ DEPLOY_OUTPUT=$(az deployment group create \
   --resource-group "${RESOURCE_GROUP}" \
   --template-file "${BICEP_FILE}" \
   --parameters baseName="${BASE_NAME}" location="${LOCATION}" \
+               aoaiEndpoint="${AOAI_ENDPOINT}" aoaiKey="${AOAI_KEY}" aoaiDeployment="${AOAI_DEPLOYMENT}" \
   --output json)
 
 echo "      Deployment complete."

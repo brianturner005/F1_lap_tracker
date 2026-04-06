@@ -4,6 +4,16 @@ param baseName string = 'f1tracker'
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
+@description('Azure OpenAI endpoint for the AI debrief proxy (e.g. https://your-resource.openai.azure.com).')
+param aoaiEndpoint string = ''
+
+@description('Azure OpenAI API key for the AI debrief proxy.')
+@secure()
+param aoaiKey string = ''
+
+@description('Azure OpenAI deployment name for the AI debrief proxy.')
+param aoaiDeployment string = 'gpt-4o-mini'
+
 // ---------------------------------------------------------------------------
 // Storage Account — required by Azure Functions
 // ---------------------------------------------------------------------------
@@ -61,6 +71,21 @@ resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024
       id: 'f1tracker'
     }
     // No throughput — serverless account manages this automatically.
+  }
+}
+
+resource debriefUsageContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-02-15-preview' = {
+  parent: cosmosDatabase
+  name: 'debrief_usage'
+  properties: {
+    resource: {
+      id: 'debrief_usage'
+      partitionKey: {
+        paths: [ '/player_id' ]
+        kind: 'Hash'
+      }
+      defaultTtl: 90000  // ~25 hours — usage records auto-expire daily
+    }
   }
 }
 
@@ -158,6 +183,18 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'COSMOS_CONNECTION_STRING'
           value: cosmosAccount.listConnectionStrings().connectionStrings[0].connectionString
+        }
+        {
+          name: 'AZURE_OPENAI_ENDPOINT'
+          value: aoaiEndpoint
+        }
+        {
+          name: 'AZURE_OPENAI_KEY'
+          value: aoaiKey
+        }
+        {
+          name: 'AZURE_OPENAI_DEPLOYMENT'
+          value: aoaiDeployment
         }
       ]
       alwaysOn: true   // Required for dedicated (non-consumption) plans
