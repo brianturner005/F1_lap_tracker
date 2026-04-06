@@ -10,6 +10,19 @@ RESOURCE_GROUP="${1:-${RESOURCE_GROUP:-f1tracker-rg}}"
 LOCATION="${2:-${LOCATION:-westeurope}}"
 BASE_NAME="${3:-${BASE_NAME:-f1tracker}}"
 
+# Azure OpenAI credentials for the AI debrief proxy (optional).
+# Leave blank to skip — you can re-run deploy.sh later once quota is approved
+# and the credentials will be added to the Function App settings.
+AOAI_ENDPOINT="${AOAI_ENDPOINT:-}"
+AOAI_KEY="${AOAI_KEY:-}"
+AOAI_DEPLOYMENT="${AOAI_DEPLOYMENT:-gpt-4o-mini}"
+
+if [[ -z "${AOAI_ENDPOINT}" ]]; then
+  echo "ℹ️   Azure OpenAI endpoint not set — AI debrief will be disabled until you re-run this script with credentials."
+  echo "     Set AOAI_ENDPOINT and AOAI_KEY env vars and re-run to enable it."
+  echo ""
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BICEP_FILE="${SCRIPT_DIR}/main.bicep"
@@ -54,6 +67,7 @@ DEPLOY_OUTPUT=$(az deployment group create \
   --resource-group "${RESOURCE_GROUP}" \
   --template-file "${BICEP_FILE}" \
   --parameters baseName="${BASE_NAME}" location="${LOCATION}" \
+               aoaiEndpoint="${AOAI_ENDPOINT}" aoaiKey="${AOAI_KEY}" aoaiDeployment="${AOAI_DEPLOYMENT}" \
   --output json)
 
 echo "      Deployment complete."
