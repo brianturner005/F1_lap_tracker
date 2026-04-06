@@ -975,19 +975,19 @@ td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-
 
 /* Logo + beta badge */
 .logo-wrap { display:flex; align-items:center; gap:10px; }
-.logo-img { height:52px; width:auto; display:block; }
+.logo-img { height:80px; width:auto; display:block; }
 .beta-badge {
   font-family: 'Orbitron', sans-serif;
-  font-size: .45rem;
+  font-size: .52rem;
   font-weight: 700;
   letter-spacing: .2em;
   color: var(--red);
   border: 1px solid var(--red);
-  padding: 3px 7px;
+  padding: 4px 8px;
   border-radius: 2px;
   opacity: .85;
   align-self: flex-end;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   white-space: nowrap;
 }
 
