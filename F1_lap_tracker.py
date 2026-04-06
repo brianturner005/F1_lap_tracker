@@ -973,6 +973,24 @@ td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-
 .debrief-para:last-child { margin-bottom: 0; }
 .debrief-loading { color: var(--muted); font-size: .8rem; padding: 20px 0; animation: pulse 1.5s infinite; }
 
+/* Logo + beta badge */
+.logo-wrap { display:flex; align-items:center; gap:10px; }
+.logo-img { height:52px; width:auto; display:block; }
+.beta-badge {
+  font-family: 'Orbitron', sans-serif;
+  font-size: .45rem;
+  font-weight: 700;
+  letter-spacing: .2em;
+  color: var(--red);
+  border: 1px solid var(--red);
+  padding: 3px 7px;
+  border-radius: 2px;
+  opacity: .85;
+  align-self: flex-end;
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+
 /* Theme selector */
 .theme-select {
 background: var(--panel);
@@ -1000,7 +1018,12 @@ transition: border-color .2s, color .2s;
 </head>
 <body>
 <header>
-  <div class="logo">PITWALL<span> IQ</span></div>
+  <div class="logo-wrap">
+    <img src="/logo" alt="Pitwall IQ" class="logo-img"
+         onerror="this.style.display='none';document.getElementById('logo-text').style.display='block'">
+    <div id="logo-text" class="logo" style="display:none">PITWALL<span> IQ</span></div>
+    <span class="beta-badge">IN DEVELOPMENT</span>
+  </div>
   <div style="display:flex;align-items:center;gap:16px;">
     <select id="theme-select" class="theme-select" onchange="applyTheme(this.value)">
       <option value="">F1 DEFAULT</option>
@@ -1419,7 +1442,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/state":
+        if parsed.path == "/logo":
+            logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.PNG")
+            if os.path.exists(logo_path):
+                with open(logo_path, "rb") as f:
+                    img_data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", len(img_data))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(img_data)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
+        elif parsed.path == "/api/state":
             with state_lock:
                 payload = json.dumps(state).encode()
             self.send_response(200)
