@@ -1,0 +1,34 @@
+# Database — contains personal session and lap data, never commit
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Azure Functions local settings (contains secrets)
+local.settings.json
+
+# PyInstaller output
+*.spec
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
