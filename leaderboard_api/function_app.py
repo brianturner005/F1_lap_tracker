@@ -63,16 +63,12 @@ def _ms_to_laptime(ms) -> str:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/submit  (leaderboard PB submission)
+# POST /api/lb-submit  (anonymous proxy — key stays server-side)
+# POST /api/submit     (kept for backwards compat, requires function key)
 # ---------------------------------------------------------------------------
 
-@app.route(route="submit", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
-def submit(req: func.HttpRequest) -> func.HttpResponse:
-    try:
-        body = req.get_json()
-    except ValueError:
-        return _error("Request body must be valid JSON.")
-
+def _handle_submit(body) -> func.HttpResponse:
+    """Shared submit logic used by both endpoints."""
     required = ["player_id", "display_name", "track", "session_type", "lap_time_ms", "lap_time", "submitted_at"]
     missing = [f for f in required if f not in body or body[f] is None]
     if missing:
@@ -140,6 +136,24 @@ def submit(req: func.HttpRequest) -> func.HttpResponse:
     rank = int(results[0]) + 1 if results else 1
 
     return _json_response({"ok": True, "rank": rank, "updated": updated})
+
+
+@app.route(route="lb-submit", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def lb_submit(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+    except ValueError:
+        return _error("Request body must be valid JSON.")
+    return _handle_submit(body)
+
+
+@app.route(route="submit", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def submit(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+    except ValueError:
+        return _error("Request body must be valid JSON.")
+    return _handle_submit(body)
 
 
 # ---------------------------------------------------------------------------
