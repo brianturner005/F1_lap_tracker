@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pitwall IQ — F1 Lap Tracker</title>
+  <style>
+    :root {
+      --red:    #e10600;
+      --dark:   #0f0f0f;
+      --card:   #1a1a1a;
+      --border: #2a2a2a;
+      --text:   #e8e8e8;
+      --muted:  #888;
+      --gold:   #ffd700;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--dark);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      line-height: 1.6;
+    }
+
+    a { color: var(--red); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(15,15,15,0.95);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .logo span { color: var(--red); }
+
+    nav a {
+      color: var(--muted);
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+
+    nav a:hover { color: var(--text); text-decoration: none; }
+
+    .nav-links { display: flex; gap: 2rem; align-items: center; }
+
+    .btn {
+      display: inline-block;
+      padding: 0.55rem 1.25rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: #c00500; text-decoration: none; }
+
+    .btn-outline {
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: transparent;
+    }
+
+    .btn-outline:hover { border-color: var(--muted); text-decoration: none; }
+
+    /* ── Hero ── */
+    .hero {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 6rem 2rem 4rem;
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-block;
+      background: rgba(225,6,0,0.15);
+      color: var(--red);
+      border: 1px solid rgba(225,6,0,0.3);
+      border-radius: 20px;
+      padding: 0.3rem 0.9rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.5rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--red);
+    }
+
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 620px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Divider ── */
+    .section-label {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 3rem;
+    }
+
+    /* ── Features grid ── */
+    section { padding: 5rem 2rem; }
+
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    h2 {
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-intro {
+      color: var(--muted);
+      font-size: 1.05rem;
+      margin-bottom: 3rem;
+      max-width: 560px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: border-color 0.2s;
+    }
+
+    .card:hover { border-color: #444; }
+
+    .card-icon {
+      font-size: 1.6rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .card h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+
+    .card p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ── How it works ── */
+    .how-section { background: #111; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 2rem;
+    }
+
+    .step-num {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--red);
+      margin-bottom: 0.5rem;
+    }
+
+    .step h3 { font-size: 1rem; margin-bottom: 0.4rem; }
+    .step p  { font-size: 0.88rem; color: var(--muted); }
+
+    /* ── Lap table preview ── */
+    .lap-preview {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 0.85rem;
+      width: 100%;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .lap-preview table { width: 100%; border-collapse: collapse; }
+
+    .lap-preview th {
+      background: #222;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.6rem 1rem;
+      text-align: left;
+    }
+
+    .lap-preview td {
+      padding: 0.65rem 1rem;
+      border-top: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .lap-preview tr.pb td { background: rgba(255,215,0,0.06); }
+    .lap-preview tr.pb td:first-child { color: var(--gold); }
+
+    .tyre {
+      display: inline-block;
+      width: 22px;
+      height: 22px;
+      line-height: 22px;
+      text-align: center;
+      border-radius: 50%;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .tyre-S { background: #c0392b; color: #fff; }
+    .tyre-M { background: #f1c40f; color: #000; }
+    .tyre-H { background: #ecf0f1; color: #000; }
+
+    .delta-neg { color: #e74c3c; }
+    .delta-pos { color: #2ecc71; }
+    .pb-pill {
+      background: rgba(155,89,182,0.25);
+      color: #c39bd3;
+      border-radius: 4px;
+      padding: 0 6px;
+      font-size: 0.75rem;
+    }
+
+    /* ── Optional features ── */
+    .optional-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .opt-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+    }
+
+    .opt-card .tag {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.15rem 0.5rem;
+      display: inline-block;
+      margin-bottom: 1rem;
+    }
+
+    .opt-card h3 { font-size: 1.05rem; margin-bottom: 0.5rem; }
+    .opt-card p  { font-size: 0.88rem; color: var(--muted); }
+
+    /* ── Requirements ── */
+    .req-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      display: flex;
+      gap: 3rem;
+      flex-wrap: wrap;
+    }
+
+    .req-box h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem; }
+
+    .req-box ul { list-style: none; }
+    .req-box li { font-size: 0.9rem; margin-bottom: 0.35rem; }
+    .req-box li::before { content: "✓ "; color: #2ecc71; }
+
+    /* ── CTA ── */
+    .cta-section {
+      text-align: center;
+      padding: 6rem 2rem;
+      background: radial-gradient(ellipse at 50% 0%, rgba(225,6,0,0.08) 0%, transparent 70%);
+      border-top: 1px solid var(--border);
+    }
+
+    .cta-section h2 { margin-bottom: 1rem; }
+    .cta-section p  { color: var(--muted); margin-bottom: 2rem; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    /* ── Code block ── */
+    pre {
+      background: #111;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      font-size: 0.88rem;
+      color: #cdd6f4;
+      margin-top: 0.75rem;
+    }
+
+    code { font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">&#9873; <span>Pitwall</span>&nbsp;IQ</div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#optional">Extras</a>
+    <a href="https://github.com/brianturner005/f1_lap_tracker" class="btn btn-outline">GitHub</a>
+    <a href="https://github.com/brianturner005/f1_lap_tracker#setup" class="btn btn-primary">Download</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="badge">F1 25 &bull; F1 24 &bull; F1 23</div>
+  <h1>Your personal<br><em>race engineer</em><br>in the browser</h1>
+  <p>Pitwall IQ captures every lap time, sector split, and tyre stint automatically via F1's built-in UDP telemetry — no mods, no middleware, no fuss.</p>
+  <div class="hero-actions">
+    <a href="https://github.com/brianturner005/f1_lap_tracker#setup" class="btn btn-primary">Get started free</a>
+    <a href="https://github.com/brianturner005/f1_lap_tracker" class="btn btn-outline">View on GitHub</a>
+  </div>
+</section>
+
+<!-- LAP TABLE PREVIEW -->
+<div class="container" style="padding-bottom: 3rem;">
+  <div class="lap-preview">
+    <table>
+      <thead>
+        <tr>
+          <th>Lap</th>
+          <th>Tyre</th>
+          <th>Time</th>
+          <th>Delta</th>
+          <th>S1</th>
+          <th>S2</th>
+          <th>S3</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="pb">
+          <td>&#9733; 7</td>
+          <td><span class="tyre tyre-S">S</span></td>
+          <td>1:18.421</td>
+          <td><span class="pb-pill">PB!</span></td>
+          <td>28.104</td>
+          <td>22.817</td>
+          <td>27.500</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td><span class="tyre tyre-S">S</span></td>
+          <td>1:18.892</td>
+          <td><span class="delta-neg">+0.471</span></td>
+          <td>28.341</td>
+          <td>23.012</td>
+          <td>27.539</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td><span class="tyre tyre-M">M</span></td>
+          <td>1:19.648</td>
+          <td><span class="delta-neg">+1.227</span></td>
+          <td>28.801</td>
+          <td>23.244</td>
+          <td>27.603</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><span class="tyre tyre-M">M</span></td>
+          <td>1:19.201</td>
+          <td><span class="delta-neg">+0.780</span></td>
+          <td>28.512</td>
+          <td>23.101</td>
+          <td>27.588</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><span class="tyre tyre-H">H</span></td>
+          <td>1:20.315</td>
+          <td><span class="delta-neg">+1.894</span></td>
+          <td>29.100</td>
+          <td>23.490</td>
+          <td>27.725</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <p class="section-label">Features</p>
+    <h2>Everything you need to analyse your pace</h2>
+    <p class="section-intro">All the data the game generates, presented in a clean browser dashboard — on any device on your local network.</p>
+    <div class="features-grid">
+      <div class="card">
+        <div class="card-icon">&#9654;</div>
+        <h3>Auto-capture</h3>
+        <p>Lap times are recorded the instant you cross the finish line. No button presses, no setup per session.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#9201;</div>
+        <h3>Sector splits</h3>
+        <p>S1, S2, and S3 times per lap so you can pinpoint exactly where you're losing time.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#9733;</div>
+        <h3>Best lap tracking</h3>
+        <p>Personal best is highlighted in gold. Every other lap shows a delta so the gap is always visible at a glance.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128663;</div>
+        <h3>Tyre compound tracking</h3>
+        <p>Soft, Medium, Hard, Inter, and Wet — each lap records the compound with colour-coded pills in the table.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128190;</div>
+        <h3>Persistent storage</h3>
+        <p>Every session and lap is automatically saved to a local SQLite database. Data survives restarts.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128196;</div>
+        <h3>CSV export</h3>
+        <p>Download the current session or any past session as a CSV to analyse in Excel, Python, or anything else.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#127942;</div>
+        <h3>All-time personal bests</h3>
+        <p>Track PBs are stored per track and session type — a Monaco Qualifying PB and a Monaco Race PB are kept separately.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#9940;</div>
+        <h3>Invalid lap flagging</h3>
+        <p>Track-limits violations are marked clearly so a dirty lap never gets mistaken for a real time.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#127760;</div>
+        <h3>Works on any device</h3>
+        <p>The dashboard runs in any browser. Open it on your laptop, tablet, or phone — as long as it's on the same network.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" class="how-section">
+  <div class="container">
+    <p class="section-label">How it works</p>
+    <h2>Up and running in three steps</h2>
+    <p class="section-intro" style="margin-bottom: 2.5rem;">Pitwall IQ uses F1 25's built-in UDP telemetry — no mods or extra software required.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h3>Enable UDP in-game</h3>
+        <p>Go to Settings → Telemetry Settings. Set UDP Telemetry to On, IP to 127.0.0.1, and port to 20777. One-time setup.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h3>Run the tracker</h3>
+        <p>Requires Python 3.8+ and nothing else — no third-party packages. Uses only the standard library.</p>
+        <pre><code>python F1_lap_tracker.py</code></pre>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h3>Open the dashboard</h3>
+        <p>Navigate to <code>http://localhost:5000</code> in any browser. Once you enter a session the status switches to <strong>LIVE TELEMETRY</strong>.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">04</div>
+        <h3>Drive normally</h3>
+        <p>Every lap is captured automatically. Browse past sessions, export CSVs, and track your PBs without touching a button.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- OPTIONAL FEATURES -->
+<section id="optional">
+  <div class="container">
+    <p class="section-label">Optional extras</p>
+    <h2>Go further with Azure</h2>
+    <p class="section-intro">Both features are fully opt-in. The tracker works completely offline without them.</p>
+    <div class="optional-grid">
+      <div class="opt-card">
+        <span class="tag">Azure OpenAI</span>
+        <h3>AI Lap Debrief</h3>
+        <p>After any session, click <strong>AI DEBRIEF</strong> to get a race-engineer-style written analysis — pace, sector weaknesses, tyre performance, and one actionable recommendation. Costs a few cents per month for casual use.</p>
+      </div>
+      <div class="opt-card">
+        <span class="tag">Azure Functions + Cosmos DB</span>
+        <h3>Community Leaderboard</h3>
+        <p>Compare your track PBs against other players. The top-25 leaderboard appears live in the dashboard. One person deploys the backend; everyone else just sets two environment variables. No account required — your identity is an anonymous UUID.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- REQUIREMENTS -->
+<section style="padding-top: 0; padding-bottom: 5rem;">
+  <div class="container">
+    <p class="section-label">Requirements</p>
+    <div class="req-box">
+      <div>
+        <h3>Core app</h3>
+        <ul>
+          <li>Python 3.8 or newer</li>
+          <li>F1 25, F1 24, or F1 23 on PC</li>
+          <li>No third-party packages</li>
+          <li>Works fully offline</li>
+        </ul>
+      </div>
+      <div>
+        <h3>AI Debrief (optional)</h3>
+        <ul>
+          <li>Azure OpenAI resource</li>
+          <li>GPT-4o or GPT-4o mini deployment</li>
+          <li>~$0.005 per debrief</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Leaderboard (optional)</h3>
+        <ul>
+          <li>Azure CLI + Functions Core Tools</li>
+          <li>One-command deploy script included</li>
+          <li>~$13–14/month to host</li>
+          <li>Console versions supported too</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="container">
+    <h2>Start tracking your laps today</h2>
+    <p>Free and open source. No account. No install beyond Python.</p>
+    <div class="hero-actions">
+      <a href="https://github.com/brianturner005/f1_lap_tracker#setup" class="btn btn-primary">Get started</a>
+      <a href="https://github.com/brianturner005/f1_lap_tracker" class="btn btn-outline">View source on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>Pitwall IQ &mdash; open source F1 lap tracker &bull; <a href="https://github.com/brianturner005/f1_lap_tracker">GitHub</a></p>
+  <p style="margin-top: 0.4rem;">Not affiliated with Formula 1, FIA, or EA Sports.</p>
+</footer>
+
+</body>
+</html>
