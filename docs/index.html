@@ -6,7 +6,7 @@
   <title>Pitwall IQ — F1 Lap Tracker</title>
   <style>
     :root {
-      --red:    #e10600;
+      --accent: #00b86b;
       --dark:   #0f0f0f;
       --card:   #1a1a1a;
       --border: #2a2a2a;
@@ -24,7 +24,7 @@
       line-height: 1.6;
     }
 
-    a { color: var(--red); text-decoration: none; }
+    a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     /* ── Nav ── */
@@ -42,7 +42,7 @@
     }
 
     .logo img {
-      height: 48px;
+      height: 72px;
       width: auto;
       display: block;
       mix-blend-mode: lighten;
@@ -73,11 +73,11 @@
     }
 
     .btn-primary {
-      background: var(--red);
+      background: var(--accent);
       color: #fff;
     }
 
-    .btn-primary:hover { background: #c00500; text-decoration: none; }
+    .btn-primary:hover { background: #009956; text-decoration: none; }
 
     .btn-outline {
       border: 1px solid var(--border);
@@ -97,9 +97,9 @@
 
     .badge {
       display: inline-block;
-      background: rgba(225,6,0,0.15);
-      color: var(--red);
-      border: 1px solid rgba(225,6,0,0.3);
+      background: rgba(0,184,107,0.15);
+      color: var(--accent);
+      border: 1px solid rgba(0,184,107,0.3);
       border-radius: 20px;
       padding: 0.3rem 0.9rem;
       font-size: 0.8rem;
@@ -119,7 +119,7 @@
 
     h1 em {
       font-style: normal;
-      color: var(--red);
+      color: var(--accent);
     }
 
     .hero p {
@@ -204,7 +204,7 @@
     .step-num {
       font-size: 2rem;
       font-weight: 800;
-      color: var(--red);
+      color: var(--accent);
       margin-bottom: 0.5rem;
     }
 
@@ -320,7 +320,7 @@
     .cta-section {
       text-align: center;
       padding: 6rem 2rem;
-      background: radial-gradient(ellipse at 50% 0%, rgba(225,6,0,0.08) 0%, transparent 70%);
+      background: radial-gradient(ellipse at 50% 0%, rgba(0,184,107,0.08) 0%, transparent 70%);
       border-top: 1px solid var(--border);
     }
 
@@ -367,7 +367,7 @@
 
 <!-- HERO -->
 <section class="hero">
-  <img src="logo.png" alt="Pitwall IQ" class="hero-logo" style="height:140px;width:auto;margin:0 auto 1.5rem;display:block;" />
+  <img src="logo.png" alt="Pitwall IQ" class="hero-logo" style="height:220px;width:auto;margin:0 auto 1.5rem;display:block;" />
   <div class="badge">F1 25 &bull; F1 24 &bull; F1 23</div>
   <h1>Your personal<br><em>race engineer</em><br>in the browser</h1>
   <p>Pitwall IQ captures every lap time, sector split, and tyre stint automatically via F1's built-in UDP telemetry — no mods, no middleware, no fuss.</p>
@@ -539,14 +539,14 @@
     <p class="section-intro">Both features are fully opt-in. The tracker works completely offline without them.</p>
     <div class="optional-grid">
       <div class="opt-card">
-        <span class="tag">Azure OpenAI</span>
+        <span class="tag">Powered by Azure</span>
         <h3>AI Lap Debrief</h3>
-        <p>After any session, click <strong>AI DEBRIEF</strong> to get a race-engineer-style written analysis — pace, sector weaknesses, tyre performance, and one actionable recommendation. Costs a few cents per month for casual use.</p>
+        <p>After any session, click <strong>AI DEBRIEF</strong> to get a race-engineer-style written analysis — pace, sector weaknesses, tyre performance, and one actionable recommendation.</p>
       </div>
       <div class="opt-card">
-        <span class="tag">Azure Functions + Cosmos DB</span>
+        <span class="tag">Powered by Azure</span>
         <h3>Community Leaderboard</h3>
-        <p>Compare your track PBs against other players. The top-25 leaderboard appears live in the dashboard. One person deploys the backend; everyone else just sets two environment variables. No account required — your identity is an anonymous UUID.</p>
+        <p>Compare your track PBs against other players. The top-25 leaderboard appears live in the dashboard. No account required — your identity is an anonymous UUID.</p>
       </div>
     </div>
   </div>
@@ -569,17 +569,16 @@
       <div>
         <h3>AI Debrief (optional)</h3>
         <ul>
-          <li>Azure OpenAI resource</li>
-          <li>GPT-4o or GPT-4o mini deployment</li>
-          <li>~$0.005 per debrief</li>
+          <li>Opt-in feature</li>
+          <li>Powered by Azure</li>
+          <li>Enabled via environment variable</li>
         </ul>
       </div>
       <div>
         <h3>Leaderboard (optional)</h3>
         <ul>
-          <li>Azure CLI + Functions Core Tools</li>
-          <li>One-command deploy script included</li>
-          <li>~$13–14/month to host</li>
+          <li>Opt-in feature</li>
+          <li>Powered by Azure</li>
           <li>Console versions supported too</li>
         </ul>
       </div>
