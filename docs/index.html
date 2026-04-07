@@ -50,10 +50,9 @@
 
     .hero-logo-wrap {
       overflow: hidden;
-      width: 920px;
-      max-width: 100%;
+      width: min(820px, 95vw);
       height: 380px;
-      margin: 0 auto -3rem;
+      margin: 2rem auto -3rem;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -105,7 +104,7 @@
     .hero {
       max-width: 900px;
       margin: 0 auto;
-      padding: 1.5rem 2rem 4rem;
+      padding: 0 2rem 4rem;
       text-align: center;
     }
 
@@ -379,11 +378,13 @@
   </div>
 </nav>
 
+<!-- HERO LOGO (outside hero container so it's not width-constrained) -->
+<div class="hero-logo-wrap">
+  <img src="logo.png" alt="Pitwall IQ" class="hero-logo" />
+</div>
+
 <!-- HERO -->
 <section class="hero">
-  <div class="hero-logo-wrap">
-    <img src="logo.png" alt="Pitwall IQ" class="hero-logo" />
-  </div>
   <div class="badge">F1 25 &bull; F1 24 &bull; F1 23</div>
   <h1>Your personal<br><em>race engineer</em><br>in the browser</h1>
   <p>Pitwall IQ captures every lap time, sector split, and tyre stint automatically via F1's built-in UDP telemetry — no mods, no middleware, no fuss.</p>
