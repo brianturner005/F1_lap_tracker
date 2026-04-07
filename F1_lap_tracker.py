@@ -37,10 +37,9 @@ import os
 # ── Leaderboard config (set via environment variables) ────────────────────────
 LEADERBOARD_URL = os.environ.get("F1_LEADERBOARD_URL", "").rstrip("/")
 # Normalise: strip trailing /api so the URL works whether or not the user
-# included it (the code appends /api/submit etc. itself).
+# included it (the code appends /api/lb-submit etc. itself).
 if LEADERBOARD_URL.endswith("/api"):
     LEADERBOARD_URL = LEADERBOARD_URL[:-4]
-LEADERBOARD_KEY = os.environ.get("F1_LEADERBOARD_KEY", "")
 
 # ── AI debrief proxy URL ──────────────────────────────────────────────────────
 # Points to the Pitwall IQ Azure Function that proxies AI debrief requests.
@@ -545,7 +544,7 @@ def parse_car_status_packet(data, player_idx):
 # ── Community leaderboard ─────────────────────────────────────────────────────
 
 def _lb_post(payload):
-    """POST payload dict to leaderboard /api/submit in background."""
+    """POST payload dict to leaderboard /api/lb-submit in background."""
     if not LEADERBOARD_URL:
         return
     def _run():
@@ -553,12 +552,9 @@ def _lb_post(payload):
             from urllib.request import urlopen, Request as UReq
             data = json.dumps(payload).encode()
             req = UReq(
-                f"{LEADERBOARD_URL}/api/submit",
+                f"{LEADERBOARD_URL}/api/lb-submit",
                 data=data,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-functions-key": LEADERBOARD_KEY,
-                },
+                headers={"Content-Type": "application/json"},
                 method="POST",
             )
             with urlopen(req, timeout=10) as resp:
