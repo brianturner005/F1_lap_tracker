@@ -80,6 +80,11 @@ state = {
     "player_position": 0,
     "total_laps": 0,
     "last_recorded_lap_ms": 0,  # tracks last lap time we saved, to catch final lap
+    "car_pos": {"x": 0.0, "z": 0.0},  # current world position
+    "car_speed": 0,                    # current speed km/h
+    "current_sector": 0,               # 0=S1, 1=S2, 2=S3
+    "lap_trace": [],                   # [{x,z,speed,sector}] current lap
+    "track_outline": [],               # reference trace from last completed lap
 }
 
 TRACK_IDS = {
@@ -91,6 +96,40 @@ TRACK_IDS = {
     22:"Silverstone Short", 23:"Texas Short", 24:"Suzuka Short",
     25:"Hanoi", 26:"Zandvoort", 27:"Imola", 28:"Portimão", 29:"Jeddah",
     30:"Miami", 31:"Las Vegas", 32:"Lusail (Qatar)", 33:"Interlagos Short"
+}
+
+# Maps game track name → SVG filename (without .svg extension)
+TRACK_SVG = {
+    "Melbourne":        "australia",
+    "Shanghai":         "china",
+    "Sakhir (Bahrain)": "bahrain",
+    "Sakhir Short":     "bahrain",
+    "Catalunya":        "spain",
+    "Monaco":           "monaco",
+    "Montreal":         "canada",
+    "Silverstone":      "silverstone",
+    "Silverstone Short":"silverstone",
+    "Hungaroring":      "hungary",
+    "Spa":              "spa",
+    "Monza":            "monza",
+    "Singapore":        "singapore",
+    "Suzuka":           "japan",
+    "Suzuka Short":     "japan",
+    "Abu Dhabi":        "abudhabi",
+    "Texas (COTA)":     "usa",
+    "Texas Short":      "usa",
+    "Brazil":           "brazil",
+    "Interlagos Short": "brazil",
+    "Austria":          "austria",
+    "Mexico":           "mexico",
+    "Baku (Azerbaijan)":"azerbaijan",
+    "Zandvoort":        "netherlands",
+    "Imola":            "imola",
+    "Portimão":         "portugal",
+    "Jeddah":           "saudi_arabia",
+    "Miami":            "miami",
+    "Las Vegas":        "las_vegas",
+    "Lusail (Qatar)":   "qatar",
 }
 
 SESSION_TYPES = {
@@ -434,6 +473,8 @@ def parse_lap_data_packet(data, player_idx):
             if s2_total_ms > 0:
                 state["last_sector"][1] = s2_total_ms
 
+            state["current_sector"] = sector
+
             prev_lap = state["current_lap"]
             state["current_lap"] = cur_lap_num
 
@@ -502,6 +543,13 @@ def parse_lap_data_packet(data, player_idx):
                     lap["delta"] = delta_str(lap["lap_time_ms"], ref_ms)
                 lap["is_best"] = lap["lap_num"] == state["best_lap_num"]
 
+        # Save current lap trace as track outline reference, then reset for next lap
+        if save_session_id is not None:
+            with state_lock:
+                if state["lap_trace"]:
+                    state["track_outline"] = list(state["lap_trace"])
+                state["lap_trace"] = []
+
         if save_session_id is not None:
             db_save_lap(save_session_id, lap_record)
         if save_pb_data is not None:
@@ -526,7 +574,44 @@ def parse_lap_data_packet(data, player_idx):
 
 # Packet ID 7 – Car Status Data
 
-CAR_STATUS_SIZE = 55  # F1 25 per-car car status size
+CAR_STATUS_SIZE    = 55  # F1 25 per-car car status size
+MOTION_CAR_SIZE    = 60  # worldPositionX/Y/Z + velocity + direction + gforce + angles
+CAR_TELEMETRY_SIZE = 60  # speed(u16) + throttle/steer/brake(f32) + gear/rpm/drs + temps
+
+# Minimum distance (world units) between stored trace points — keeps trace lean
+_TRACE_MIN_DIST = 3.0
+_TRACE_MAX_PTS  = 4000
+
+def parse_motion_packet(data, player_idx):
+    try:
+        base = HEADER_SIZE + player_idx * MOTION_CAR_SIZE
+        if len(data) < base + 12:
+            return
+        x = struct.unpack_from("<f", data, base + 0)[0]
+        z = struct.unpack_from("<f", data, base + 8)[0]
+        with state_lock:
+            state["car_pos"] = {"x": round(x, 1), "z": round(z, 1)}
+            spd    = state["car_speed"]
+            sector = state["current_sector"]
+            trace  = state["lap_trace"]
+            # Subsample: only store a point if car has moved far enough
+            if len(trace) < _TRACE_MAX_PTS:
+                if not trace or (abs(x - trace[-1]["x"]) + abs(z - trace[-1]["z"])) >= _TRACE_MIN_DIST:
+                    trace.append({"x": round(x, 1), "z": round(z, 1),
+                                  "speed": spd, "sector": sector})
+    except Exception:
+        pass
+
+def parse_car_telemetry_packet(data, player_idx):
+    try:
+        base = HEADER_SIZE + player_idx * CAR_TELEMETRY_SIZE
+        if len(data) < base + 2:
+            return
+        speed = struct.unpack_from("<H", data, base)[0]
+        with state_lock:
+            state["car_speed"] = int(speed)
+    except Exception:
+        pass
 
 def parse_car_status_packet(data, player_idx):
     try:
@@ -638,8 +723,12 @@ def udp_listener():
                 parse_session_packet(data, pidx)
             elif pid == 2:
                 parse_lap_data_packet(data, pidx)
+            elif pid == 6:
+                parse_car_telemetry_packet(data, pidx)
             elif pid == 7:
                 parse_car_status_packet(data, pidx)
+            elif pid == 0:
+                parse_motion_packet(data, pidx)
         except socket.timeout:
             pass
         except Exception:
@@ -1023,6 +1112,17 @@ transition: border-color .2s, color .2s;
 .theme-select:hover, .theme-select:focus { border-color: var(--red); color: var(--text); }
 .theme-select option { background: #111; }
 
+/* Track map */
+#track-map-panel { display:none; }
+#track-canvas { border-radius:3px; background:transparent; }
+.map-mode-btn {
+  font-size: .52rem; padding: 2px 6px; border-radius: 2px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  font-family: 'Share Tech Mono', monospace; letter-spacing: .06em;
+  transition: border-color .2s, color .2s;
+}
+.map-mode-btn.active { border-color: var(--red); color: var(--red); }
+
 @media (max-width: 900px) {
 .app-wrap { flex-direction: column; }
 .sidebar { width: 100%; position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--border); flex-direction: row; flex-wrap: wrap; }
@@ -1068,8 +1168,21 @@ transition: border-color .2s, color .2s;
 </header>
 
 <div class="app-wrap">
-  <aside class="sidebar" id="sidebar">
-    <!-- stat panels filled by JS -->
+  <aside class="sidebar">
+    <div id="sidebar-stats"><!-- stat panels filled by JS --></div>
+    <div class="panel" id="track-map-panel">
+      <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Track Map</span>
+        <div style="display:flex;gap:4px;">
+          <button class="map-mode-btn active" id="map-btn-sector" onclick="setMapMode('sector')">S1/S2/S3</button>
+          <button class="map-mode-btn" id="map-btn-speed" onclick="setMapMode('speed')">SPEED</button>
+        </div>
+      </div>
+      <div style="position:relative;width:100%;aspect-ratio:1/1;">
+        <img id="track-svg-img" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0.18;display:none;">
+        <canvas id="track-canvas" width="228" height="228" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
+      </div>
+    </div>
   </aside>
   <div class="main-col">
     <div id="lap-table"></div>
@@ -1350,7 +1463,7 @@ function render(d) {
     stxt.textContent = 'Waiting for telemetry…';
   }
 
-  const sidebar  = document.getElementById('sidebar');
+  const sidebar  = document.getElementById('sidebar-stats');
   const lapTable = document.getElementById('lap-table');
 
   const bestTime = d.best_lap_ms ? fmt(msToLap(d.best_lap_ms)) : '--:--.---';
@@ -1431,6 +1544,7 @@ function render(d) {
 
   sidebar.innerHTML  = p1 + p2 + p3;
   lapTable.innerHTML = p4;
+  _updateTrackSvg(d.track_svg || null);
 }
 
 function msToLap(ms) {
@@ -1442,15 +1556,127 @@ function msToLap(ms) {
   return `${m}:${String(s).padStart(2,'0')}.${String(ms3).padStart(3,'0')}`;
 }
 
+// ── Track Map ──────────────────────────────────────────────────────────────────
+let _mapMode = 'sector';
+let _loadedSvg = null;
+
+function _updateTrackSvg(svgName) {
+  const img = document.getElementById('track-svg-img');
+  if (!svgName) { img.style.display = 'none'; _loadedSvg = null; return; }
+  if (svgName === _loadedSvg) return;
+  _loadedSvg = svgName;
+  img.src = `/api/track-svg/${svgName}`;
+  img.style.display = 'block';
+}
+const _SECTOR_COLORS = ['#e10600', '#f7c948', '#9b59b6'];
+
+function setMapMode(mode) {
+  _mapMode = mode;
+  document.getElementById('map-btn-sector').className = 'map-mode-btn' + (mode === 'sector' ? ' active' : '');
+  document.getElementById('map-btn-speed').className  = 'map-mode-btn' + (mode === 'speed'  ? ' active' : '');
+}
+
+function _speedColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  if (t < 0.5) {
+    const v = Math.round(t * 2 * 255);
+    return `rgb(0,${v},${255 - v})`;
+  }
+  const v = Math.round((t - 0.5) * 2 * 255);
+  return `rgb(${v},${Math.round((1 - (t - 0.5) * 2) * 200)},0)`;
+}
+
+function _bounds(pts) {
+  if (!pts.length) return { minX: 0, maxX: 1, minZ: 0, maxZ: 1 };
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
+function _toCanvas(p, b, cw, ch, pad) {
+  const rng = Math.max(b.maxX - b.minX, b.maxZ - b.minZ, 1);
+  const scale = (Math.min(cw, ch) - 2 * pad) / rng;
+  const ox = pad + ((cw - 2 * pad) - (b.maxX - b.minX) * scale) / 2;
+  const oz = pad + ((ch - 2 * pad) - (b.maxZ - b.minZ) * scale) / 2;
+  return {
+    x: ox + (p.x - b.minX) * scale,
+    y: ch - oz - (p.z - b.minZ) * scale,
+  };
+}
+
+function renderTrackMap(data) {
+  const panel  = document.getElementById('track-map-panel');
+  const canvas = document.getElementById('track-canvas');
+  const outline = data.track_outline || [];
+  const trace   = data.lap_trace    || [];
+
+  if (outline.length < 10 && trace.length < 10) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  const ctx = canvas.getContext('2d');
+  const cw = canvas.width, ch = canvas.height, pad = 14;
+  ctx.clearRect(0, 0, cw, ch);
+
+  const ref = outline.length >= trace.length ? outline : trace;
+  const b   = _bounds(ref);
+
+  // Track outline (dark reference)
+  if (outline.length > 1) {
+    ctx.strokeStyle = '#252530'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const s = _toCanvas(outline[0], b, cw, ch, pad);
+    ctx.moveTo(s.x, s.y);
+    for (const p of outline.slice(1)) { const c = _toCanvas(p, b, cw, ch, pad); ctx.lineTo(c.x, c.y); }
+    ctx.stroke();
+  }
+
+  // Colored trace
+  if (trace.length > 1) {
+    const speeds = trace.map(p => p.speed);
+    const minSpd = Math.min(...speeds), spdRng = Math.max(Math.max(...speeds) - minSpd, 1);
+    for (let i = 1; i < trace.length; i++) {
+      const c1 = _toCanvas(trace[i - 1], b, cw, ch, pad);
+      const c2 = _toCanvas(trace[i],     b, cw, ch, pad);
+      ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.strokeStyle = _mapMode === 'sector'
+        ? (_SECTOR_COLORS[trace[i].sector] || '#aaa')
+        : _speedColor((trace[i].speed - minSpd) / spdRng);
+      ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
+    }
+  }
+
+  // Car position dot
+  if (data.car_pos && ref.length > 0) {
+    const pos = _toCanvas(data.car_pos, b, cw, ch, pad);
+    ctx.shadowBlur = 10; ctx.shadowColor = '#fff';
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+async function fetchMotion() {
+  try {
+    const r = await fetch('/api/motion');
+    const d = await r.json();
+    renderTrackMap(d);
+  } catch(e) {}
+}
+
 fetchState();
 fetchPBs();
 initLB();
 initAI();
 fetchSessions();
+fetchMotion();
 setInterval(fetchState, 1000);
 setInterval(fetchPBs, 60000);
 setInterval(fetchSessions, 30000);
 setInterval(fetchLeaderboard, 60000);
+setInterval(fetchMotion, 250);
 </script>
 
 </body>
@@ -1477,9 +1703,30 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             return
 
+        elif parsed.path.startswith("/api/track-svg/"):
+            name = parsed.path.split("/api/track-svg/", 1)[1].replace("..", "")
+            svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "assets", "tracks", f"{name}.svg")
+            if os.path.exists(svg_path):
+                with open(svg_path, "rb") as f:
+                    svg_data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/svg+xml")
+                self.send_header("Content-Length", len(svg_data))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(svg_data)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
         elif parsed.path == "/api/state":
             with state_lock:
-                payload = json.dumps(state).encode()
+                track_name = state["session"].get("track", "")
+                out = dict(state)
+                out["track_svg"] = TRACK_SVG.get(track_name)
+                payload = json.dumps(out).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", len(payload))
@@ -1562,6 +1809,28 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
 
+        elif parsed.path == "/api/motion":
+            with state_lock:
+                trace   = state["lap_trace"]
+                outline = state["track_outline"]
+                # Thin to max 800 points each for a lean response
+                def _thin(pts, n=800):
+                    if len(pts) <= n:
+                        return pts
+                    step = len(pts) // n
+                    return pts[::step]
+                payload = json.dumps({
+                    "car_pos":       state["car_pos"],
+                    "car_speed":     state["car_speed"],
+                    "lap_trace":     _thin(trace),
+                    "track_outline": _thin(outline),
+                }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+
         elif parsed.path == "/api/ai-config":
             payload = json.dumps({"enabled": bool(PITWALL_PROXY_URL)}).encode()
             self.send_response(200)
@@ -1605,6 +1874,8 @@ class Handler(BaseHTTPRequestHandler):
                 state["last_recorded_lap_ms"] = 0
                 state["session"]["started_at"] = None
                 state["current_session_id"] = None
+                state["lap_trace"].clear()
+                state["track_outline"].clear()
             if old_session_id is not None:
                 db_close_session(old_session_id)
             self.send_response(200)
