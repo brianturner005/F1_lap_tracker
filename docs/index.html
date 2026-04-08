@@ -45,11 +45,24 @@
       height: 72px;
       width: auto;
       display: block;
-      mix-blend-mode: lighten;
+      mix-blend-mode: screen;
+    }
+
+    .hero-logo-wrap {
+      overflow: hidden;
+      width: min(820px, 95vw);
+      height: 380px;
+      margin: 2rem auto -3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .hero-logo {
-      mix-blend-mode: lighten;
+      mix-blend-mode: screen;
+      width: 100%;
+      height: auto;
+      display: block;
     }
 
     nav a {
@@ -91,7 +104,7 @@
     .hero {
       max-width: 900px;
       margin: 0 auto;
-      padding: 6rem 2rem 4rem;
+      padding: 0 2rem 4rem;
       text-align: center;
     }
 
@@ -365,9 +378,13 @@
   </div>
 </nav>
 
+<!-- HERO LOGO (outside hero container so it's not width-constrained) -->
+<div class="hero-logo-wrap">
+  <img src="logo.png" alt="Pitwall IQ" class="hero-logo" />
+</div>
+
 <!-- HERO -->
 <section class="hero">
-  <img src="logo.png" alt="Pitwall IQ" class="hero-logo" style="height:220px;width:auto;margin:0 auto 1.5rem;display:block;" />
   <div class="badge">F1 25 &bull; F1 24 &bull; F1 23</div>
   <h1>Your personal<br><em>race engineer</em><br>in the browser</h1>
   <p>Pitwall IQ captures every lap time, sector split, and tyre stint automatically via F1's built-in UDP telemetry — no mods, no middleware, no fuss.</p>
