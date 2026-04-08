@@ -1017,7 +1017,6 @@ display: inline-block;
 .btn-green:hover { border-color: var(--green); background: rgba(0,214,143,.08); color: var(--green); }
 
 /* Past sessions */
-.sessions-wrap { padding: 0 16px 16px; max-width: 1200px; margin: 0 auto; }
 .export-link {
   color: var(--green);
   text-decoration: none;
@@ -1179,7 +1178,7 @@ transition: border-color .2s, color .2s;
         </div>
       </div>
       <div style="position:relative;width:100%;aspect-ratio:1/1;">
-        <img id="track-svg-img" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0.18;display:none;">
+        <img id="track-svg-img" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0.18;display:none;transform:scaleY(-1);">
         <canvas id="track-canvas" width="228" height="228" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
       </div>
     </div>
@@ -1297,20 +1296,20 @@ async function requestDebrief() {
   const section = document.getElementById('debrief-section');
   btn.textContent = 'GENERATING...';
   btn.disabled = true;
-  section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
+  section.innerHTML = `<div class="panel debrief-panel">
     <div class="panel-title">AI Debrief — Race Engineer</div>
     <div class="debrief-loading">Analysing your session data…</div>
-  </div></div>`;
+  </div>`;
   try {
     const r = await fetch('/api/debrief', { method: 'POST' });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     renderDebrief(d);
   } catch(e) {
-    section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
+    section.innerHTML = `<div class="panel debrief-panel">
       <div class="panel-title">AI Debrief — Race Engineer</div>
       <div style="color:var(--red);font-size:.8rem">Error: ${e.message}</div>
-    </div></div>`;
+    </div>`;
   } finally {
     btn.textContent = 'AI DEBRIEF';
     btn.disabled = false;
@@ -1324,13 +1323,13 @@ function renderDebrief(data) {
   const remainingNote = data.remaining != null
     ? `<span style="color:var(--muted);font-size:.65rem">${data.remaining} debrief${data.remaining !== 1 ? 's' : ''} remaining today</span>`
     : '';
-  section.innerHTML = `<div class="sessions-wrap"><div class="panel debrief-panel">
+  section.innerHTML = `<div class="panel debrief-panel">
     <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>AI Debrief — Race Engineer</span>
       <div style="display:flex;align-items:center;gap:12px;">${remainingNote}<button class="btn" onclick="document.getElementById('debrief-section').innerHTML=''">DISMISS</button></div>
     </div>
     <div class="debrief-body">${html}</div>
-  </div></div>`;
+  </div>`;
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
