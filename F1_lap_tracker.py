@@ -655,7 +655,7 @@ HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pitwall IQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --red: #e10600;
@@ -772,14 +772,33 @@ transition: background .3s;
 .status-text { font-size: .75rem; color: var(--muted); }
 .status-text.live { color: var(--green); }
 
-.grid {
-display: grid;
-grid-template-columns: 1fr 1fr 1fr;
-grid-template-rows: auto auto;
-gap: 12px;
+.app-wrap {
+display: flex;
+align-items: flex-start;
+}
+.sidebar {
+width: 260px;
+flex-shrink: 0;
+position: sticky;
+top: 0;
+max-height: 100vh;
+overflow-y: auto;
 padding: 16px;
-max-width: 1200px;
-margin: 0 auto;
+border-right: 1px solid var(--border);
+display: flex;
+flex-direction: column;
+gap: 12px;
+}
+.main-col {
+flex: 1;
+min-width: 0;
+padding: 16px;
+}
+.below-grid {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 12px;
+margin-top: 12px;
 }
 
 .panel {
@@ -876,8 +895,7 @@ padding: 1px 5px;
 border-radius: 2px;
 }
 
-/* Lap span full width */
-.span-full { grid-column: 1 / -1; }
+/* sessions/pbs/lb wrapper — full width within their container */
 
 /* No data state */
 .waiting {
@@ -956,7 +974,7 @@ transition: border-color .2s;
 .btn-toggle.active { border-color: var(--green); color: var(--green); }
 
 /* Community leaderboard panel */
-.lb-wrap { padding: 0 16px 16px; max-width: 1200px; margin: 0 auto; }
+.lb-wrap { padding-bottom: 8px; }
 tr.lb-player { background: rgba(0,214,143,.08); }
 tr.lb-player td { color: var(--green); }
 td.lb-rank { color: var(--muted); font-size: .7rem; width: 32px; }
@@ -966,7 +984,7 @@ td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-
 .debrief-panel { border-color: var(--purple) !important; }
 .debrief-panel::before { background: var(--purple) !important; }
 .debrief-body { padding: 4px 0; }
-.debrief-para { font-size: .82rem; line-height: 1.75; color: var(--text); margin-bottom: 14px; }
+.debrief-para { font-family: 'Inter', sans-serif; font-size: .92rem; line-height: 1.8; color: #d0d0d8; margin-bottom: 16px; letter-spacing: .01em; }
 .debrief-para:last-child { margin-bottom: 0; }
 .debrief-loading { color: var(--muted); font-size: .8rem; padding: 20px 0; animation: pulse 1.5s infinite; }
 
@@ -1005,10 +1023,12 @@ transition: border-color .2s, color .2s;
 .theme-select:hover, .theme-select:focus { border-color: var(--red); color: var(--text); }
 .theme-select option { background: #111; }
 
-@media (max-width: 700px) {
-.grid { grid-template-columns: 1fr 1fr; }
+@media (max-width: 900px) {
+.app-wrap { flex-direction: column; }
+.sidebar { width: 100%; position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--border); flex-direction: row; flex-wrap: wrap; }
+.sidebar .panel { flex: 1; min-width: 180px; }
+.below-grid { grid-template-columns: 1fr; }
 .big-num { font-size: 1.6rem; }
-.span-full { grid-column: 1 / -1; }
 }
 </style>
 
@@ -1047,13 +1067,20 @@ transition: border-color .2s, color .2s;
   </div>
 </header>
 
-<div class="grid" id="main-grid">
-  <!-- filled by JS -->
+<div class="app-wrap">
+  <aside class="sidebar" id="sidebar">
+    <!-- stat panels filled by JS -->
+  </aside>
+  <div class="main-col">
+    <div id="lap-table"></div>
+    <div class="below-grid">
+      <div id="pbs-section"></div>
+      <div id="sessions-section"></div>
+    </div>
+    <div id="lb-section"></div>
+    <div id="debrief-section"></div>
+  </div>
 </div>
-<div id="pbs-section"></div>
-<div id="lb-section"></div>
-<div id="debrief-section"></div>
-<div id="sessions-section"></div>
 
 <script>
 // ── Community leaderboard ─────────────────────────────────────────────────────
@@ -1126,18 +1153,17 @@ function renderLeaderboard(d) {
   }
   const title = `${d.track} · ${d.session_type}`;
   const rankNote = d.player_rank ? ` <span style="color:var(--green);font-size:.6rem">YOUR RANK: #${d.player_rank}</span>` : '';
-  el.innerHTML = `<div class="lb-wrap">
-    <div class="panel">
-      <div class="panel-title" style="display:flex;justify-content:space-between;">
-        <span>Community Leaderboard — ${title}</span>
-        ${rankNote}
-      </div>
-      <div class="lap-table-wrap">
-        <table>
-          <thead><tr><th>#</th><th>TIME</th><th>TYRE</th><th>DRIVER</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+  el.innerHTML = `<div class="panel lb-wrap">
+    <div class="panel-title" style="display:flex;justify-content:space-between;">
+      <span>Community Leaderboard — ${title}</span>
+      ${rankNote}
+    </div>
+    <div class="lap-table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>TIME</th><th>TYRE</th><th>DRIVER</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
     </div>
   </div>`;
 }
@@ -1251,17 +1277,15 @@ function renderPBs(pbs) {
       <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
     </tr>`;
   }
-  el.innerHTML = `<div class="sessions-wrap">
-    <div class="panel">
-      <div class="panel-title">Personal Bests — All Time</div>
-      <div class="lap-table-wrap">
-        <table>
-          <thead><tr>
-            <th>TRACK</th><th>SESSION TYPE</th><th>TIME</th><th>TYRE</th><th>SET</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+  el.innerHTML = `<div class="panel">
+    <div class="panel-title">Personal Bests — All Time</div>
+    <div class="lap-table-wrap">
+      <table>
+        <thead><tr>
+          <th>TRACK</th><th>TYPE</th><th>TIME</th><th>TYRE</th><th>SET</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
   </div>`;
 }
@@ -1291,17 +1315,15 @@ function renderSessions(sessions) {
       <td><a class="export-link" href="/api/sessions/${s.id}/export">CSV</a></td>
     </tr>`;
   }
-  el.innerHTML = `<div class="sessions-wrap">
-    <div class="panel">
-      <div class="panel-title">Past Sessions</div>
-      <div class="lap-table-wrap">
-        <table>
-          <thead><tr>
-            <th>#</th><th>TRACK</th><th>TYPE</th><th>WEATHER</th><th>STARTED</th><th>ENDED</th><th></th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+  el.innerHTML = `<div class="panel">
+    <div class="panel-title">Past Sessions</div>
+    <div class="lap-table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>TRACK</th><th>TYPE</th><th>WEATHER</th><th>STARTED</th><th>ENDED</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
   </div>`;
 }
@@ -1328,7 +1350,8 @@ function render(d) {
     stxt.textContent = 'Waiting for telemetry…';
   }
 
-  const grid = document.getElementById('main-grid');
+  const sidebar  = document.getElementById('sidebar');
+  const lapTable = document.getElementById('lap-table');
 
   const bestTime = d.best_lap_ms ? fmt(msToLap(d.best_lap_ms)) : '--:--.---';
 
@@ -1391,7 +1414,7 @@ function render(d) {
     }
   }
 
-  const p4 = `<div class="panel span-full">
+  const p4 = `<div class="panel">
     <div class="panel-title" style="display:flex;justify-content:space-between;">
       <span>Lap History</span>
       <span style="color:var(--muted)">${d.laps.length} laps</span>
@@ -1406,7 +1429,8 @@ function render(d) {
     </div>
   </div>`;
 
-  grid.innerHTML = p1 + p2 + p3 + p4;
+  sidebar.innerHTML  = p1 + p2 + p3;
+  lapTable.innerHTML = p4;
 }
 
 function msToLap(ms) {
