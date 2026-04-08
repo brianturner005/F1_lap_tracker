@@ -173,9 +173,15 @@ def init_db():
             invalid      INTEGER,
             timestamp    TEXT,
             compound     TEXT,
+            trace        TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         )
     """)
+    # Migration: add trace column if upgrading from older DB
+    try:
+        con.execute("ALTER TABLE laps ADD COLUMN trace TEXT")
+    except Exception:
+        pass
     con.execute("""
         CREATE TABLE IF NOT EXISTS personal_bests (
             track        TEXT NOT NULL,
@@ -229,15 +235,16 @@ def db_close_session(session_id):
     con.commit()
     con.close()
 
-def db_save_lap(session_id, lap):
+def db_save_lap(session_id, lap, trace=None):
     con = sqlite3.connect(DB_PATH)
     con.execute(
         """INSERT INTO laps
-           (session_id, lap_num, lap_time_ms, lap_time, s1_ms, s2_ms, s3_ms, invalid, timestamp, compound)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           (session_id, lap_num, lap_time_ms, lap_time, s1_ms, s2_ms, s3_ms, invalid, timestamp, compound, trace)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (session_id, lap["lap_num"], lap["lap_time_ms"], lap["lap_time"],
          lap["s1_ms"], lap["s2_ms"], lap["s3_ms"], int(lap["invalid"]),
-         lap["timestamp"], lap.get("compound"))
+         lap["timestamp"], lap.get("compound"),
+         json.dumps(trace) if trace else None)
     )
     con.commit()
     con.close()
@@ -544,14 +551,16 @@ def parse_lap_data_packet(data, player_idx):
                 lap["is_best"] = lap["lap_num"] == state["best_lap_num"]
 
         # Save current lap trace as track outline reference, then reset for next lap
+        saved_trace = None
         if save_session_id is not None:
             with state_lock:
                 if state["lap_trace"]:
-                    state["track_outline"] = list(state["lap_trace"])
+                    saved_trace = list(state["lap_trace"])
+                    state["track_outline"] = saved_trace
                 state["lap_trace"] = []
 
         if save_session_id is not None:
-            db_save_lap(save_session_id, lap_record)
+            db_save_lap(save_session_id, lap_record, trace=saved_trace)
         if save_pb_data is not None:
             db_upsert_track_pb(*save_pb_data)
             with state_lock:
@@ -1181,6 +1190,12 @@ transition: border-color .2s, color .2s;
         <img id="track-svg-img" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0.18;display:none;transform:scaleY(-1);">
         <canvas id="track-canvas" width="228" height="228" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
       </div>
+      <div id="lap-nav" style="display:none;align-items:center;justify-content:space-between;margin-top:8px;">
+        <button class="map-mode-btn" onclick="lapNavStep(-1)">&#8592;</button>
+        <span id="lap-nav-label" style="font-size:.65rem;color:var(--muted);letter-spacing:.1em;"></span>
+        <button class="map-mode-btn" onclick="lapNavStep(1)">&#8594;</button>
+        <button class="map-mode-btn" id="lap-nav-live" onclick="lapNavLive()" style="margin-left:4px;border-color:var(--green);color:var(--green);">LIVE</button>
+      </div>
     </div>
   </aside>
   <div class="main-col">
@@ -1358,6 +1373,7 @@ async function fetchState() {
 
 async function clearSession() {
   await fetch('/api/clear', { method: 'POST' });
+  _reviewLap = null; _lapCount = 0; _sessionId = null; _updateLapNav();
   fetchState();
   fetchPBs();
   fetchSessions();
@@ -1556,8 +1572,11 @@ function msToLap(ms) {
 }
 
 // ── Track Map ──────────────────────────────────────────────────────────────────
-let _mapMode = 'sector';
+let _mapMode   = 'sector';
 let _loadedSvg = null;
+let _reviewLap = null;   // null = live mode; number = reviewing that lap
+let _sessionId = null;
+let _lapCount  = 0;
 
 function _updateTrackSvg(svgName) {
   const img = document.getElementById('track-svg-img');
@@ -1657,11 +1676,64 @@ function renderTrackMap(data) {
   }
 }
 
+// ── Lap navigator ─────────────────────────────────────────────────────────────
+function _updateLapNav() {
+  const nav = document.getElementById('lap-nav');
+  if (_lapCount === 0) { nav.style.display = 'none'; return; }
+  nav.style.display = 'flex';
+  const liveBtn = document.getElementById('lap-nav-live');
+  const label   = document.getElementById('lap-nav-label');
+  if (_reviewLap === null) {
+    label.textContent = 'LIVE';
+    liveBtn.style.opacity = '0.3';
+    liveBtn.style.pointerEvents = 'none';
+  } else {
+    label.textContent = `LAP ${_reviewLap} / ${_lapCount}`;
+    liveBtn.style.opacity = '1';
+    liveBtn.style.pointerEvents = 'auto';
+  }
+}
+
+function lapNavStep(dir) {
+  if (_lapCount === 0) return;
+  const current = _reviewLap === null ? _lapCount + 1 : _reviewLap;
+  const next = Math.max(1, Math.min(_lapCount, current + dir));
+  if (next === current && _reviewLap !== null) return;
+  _reviewLap = next;
+  _updateLapNav();
+  _loadReviewLap();
+}
+
+function lapNavLive() {
+  _reviewLap = null;
+  _updateLapNav();
+}
+
+async function _loadReviewLap() {
+  if (_reviewLap === null || _sessionId === null) return;
+  try {
+    const r = await fetch(`/api/lap-trace/${_sessionId}/${_reviewLap}`);
+    const d = await r.json();
+    renderTrackMap({ lap_trace: d.trace, track_outline: [], car_pos: null });
+  } catch(e) {}
+}
+
 async function fetchMotion() {
   try {
     const r = await fetch('/api/motion');
     const d = await r.json();
-    renderTrackMap(d);
+    // Update lap count and session id from live state
+    if (lastData) {
+      const newCount = lastData.laps ? lastData.laps.length : 0;
+      if (newCount !== _lapCount) { _lapCount = newCount; _updateLapNav(); }
+      if (lastData.current_session_id && lastData.current_session_id !== _sessionId) {
+        _sessionId = lastData.current_session_id;
+        _reviewLap = null;
+        _lapCount  = 0;
+        _updateLapNav();
+      }
+    }
+    if (_reviewLap === null) renderTrackMap(d);
   } catch(e) {}
 }
 
@@ -1829,6 +1901,29 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", len(payload))
             self.end_headers()
             self.wfile.write(payload)
+
+        elif parsed.path.startswith("/api/lap-trace/"):
+            # /api/lap-trace/{session_id}/{lap_num}
+            parts = parsed.path.split("/")
+            try:
+                session_id = int(parts[-2])
+                lap_num    = int(parts[-1])
+                con = sqlite3.connect(DB_PATH)
+                row = con.execute(
+                    "SELECT trace FROM laps WHERE session_id=? AND lap_num=?",
+                    (session_id, lap_num)
+                ).fetchone()
+                con.close()
+                trace_data = json.loads(row[0]) if row and row[0] else []
+                payload = json.dumps({"trace": trace_data}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(payload))
+                self.end_headers()
+                self.wfile.write(payload)
+            except Exception:
+                self.send_response(400)
+                self.end_headers()
 
         elif parsed.path == "/api/ai-config":
             payload = json.dumps({"enabled": bool(PITWALL_PROXY_URL)}).encode()
