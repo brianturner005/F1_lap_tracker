@@ -1261,7 +1261,7 @@ function renderLeaderboard(d) {
       <td class="lb-rank ${top3}">${e.rank}</td>
       <td class="lap-time" style="${e.is_player ? '' : ''}">${e.lap_time}</td>
       <td>${compoundPill(e.compound)}</td>
-      <td style="font-size:.78rem">${e.display_name}</td>
+      <td style="font-size:.78rem">${esc(e.display_name)}</td>
     </tr>`;
   }
   const title = `${d.track} · ${d.session_type}`;
@@ -1442,6 +1442,10 @@ function renderSessions(sessions) {
 }
 
 function fmt(v) { return v || '--:--.---'; }
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 function compoundPill(c) {
   if (!c) return '<span style="color:var(--muted)">—</span>';
@@ -1704,7 +1708,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         elif parsed.path.startswith("/api/track-svg/"):
-            name = parsed.path.split("/api/track-svg/", 1)[1].replace("..", "")
+            name = os.path.basename(parsed.path.split("/api/track-svg/", 1)[1])
             svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "assets", "tracks", f"{name}.svg")
             if os.path.exists(svg_path):
