@@ -655,7 +655,7 @@ HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pitwall IQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --red: #e10600;
@@ -984,7 +984,7 @@ td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-
 .debrief-panel { border-color: var(--purple) !important; }
 .debrief-panel::before { background: var(--purple) !important; }
 .debrief-body { padding: 4px 0; }
-.debrief-para { font-size: .82rem; line-height: 1.75; color: var(--text); margin-bottom: 14px; }
+.debrief-para { font-family: 'Inter', sans-serif; font-size: .92rem; line-height: 1.8; color: #d0d0d8; margin-bottom: 16px; letter-spacing: .01em; }
 .debrief-para:last-child { margin-bottom: 0; }
 .debrief-loading { color: var(--muted); font-size: .8rem; padding: 20px 0; animation: pulse 1.5s infinite; }
 
