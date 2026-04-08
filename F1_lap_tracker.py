@@ -98,6 +98,40 @@ TRACK_IDS = {
     30:"Miami", 31:"Las Vegas", 32:"Lusail (Qatar)", 33:"Interlagos Short"
 }
 
+# Maps game track name → SVG filename (without .svg extension)
+TRACK_SVG = {
+    "Melbourne":        "australia",
+    "Shanghai":         "china",
+    "Sakhir (Bahrain)": "bahrain",
+    "Sakhir Short":     "bahrain",
+    "Catalunya":        "spain",
+    "Monaco":           "monaco",
+    "Montreal":         "canada",
+    "Silverstone":      "silverstone",
+    "Silverstone Short":"silverstone",
+    "Hungaroring":      "hungary",
+    "Spa":              "spa",
+    "Monza":            "monza",
+    "Singapore":        "singapore",
+    "Suzuka":           "japan",
+    "Suzuka Short":     "japan",
+    "Abu Dhabi":        "abudhabi",
+    "Texas (COTA)":     "usa",
+    "Texas Short":      "usa",
+    "Brazil":           "brazil",
+    "Interlagos Short": "brazil",
+    "Austria":          "austria",
+    "Mexico":           "mexico",
+    "Baku (Azerbaijan)":"azerbaijan",
+    "Zandvoort":        "netherlands",
+    "Imola":            "imola",
+    "Portimão":         "portugal",
+    "Jeddah":           "saudi_arabia",
+    "Miami":            "miami",
+    "Las Vegas":        "las_vegas",
+    "Lusail (Qatar)":   "qatar",
+}
+
 SESSION_TYPES = {
     0:"Unknown", 1:"Practice 1", 2:"Practice 2", 3:"Practice 3",
     4:"Short Practice", 5:"Qualifying 1", 6:"Qualifying 2", 7:"Qualifying 3",
@@ -1080,7 +1114,7 @@ transition: border-color .2s, color .2s;
 
 /* Track map */
 #track-map-panel { display:none; }
-#track-canvas { width:100%; height:auto; display:block; border-radius:3px; background:#0a0a0f; }
+#track-canvas { border-radius:3px; background:transparent; }
 .map-mode-btn {
   font-size: .52rem; padding: 2px 6px; border-radius: 2px; cursor: pointer;
   background: transparent; border: 1px solid var(--border); color: var(--muted);
@@ -1144,7 +1178,10 @@ transition: border-color .2s, color .2s;
           <button class="map-mode-btn" id="map-btn-speed" onclick="setMapMode('speed')">SPEED</button>
         </div>
       </div>
-      <canvas id="track-canvas" width="228" height="228"></canvas>
+      <div style="position:relative;width:100%;aspect-ratio:1/1;">
+        <img id="track-svg-img" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0.18;display:none;">
+        <canvas id="track-canvas" width="228" height="228" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
+      </div>
     </div>
   </aside>
   <div class="main-col">
@@ -1507,6 +1544,7 @@ function render(d) {
 
   sidebar.innerHTML  = p1 + p2 + p3;
   lapTable.innerHTML = p4;
+  _updateTrackSvg(d.track_svg || null);
 }
 
 function msToLap(ms) {
@@ -1520,6 +1558,16 @@ function msToLap(ms) {
 
 // ── Track Map ──────────────────────────────────────────────────────────────────
 let _mapMode = 'sector';
+let _loadedSvg = null;
+
+function _updateTrackSvg(svgName) {
+  const img = document.getElementById('track-svg-img');
+  if (!svgName) { img.style.display = 'none'; _loadedSvg = null; return; }
+  if (svgName === _loadedSvg) return;
+  _loadedSvg = svgName;
+  img.src = `/api/track-svg/${svgName}`;
+  img.style.display = 'block';
+}
 const _SECTOR_COLORS = ['#e10600', '#f7c948', '#9b59b6'];
 
 function setMapMode(mode) {
@@ -1655,9 +1703,30 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             return
 
+        elif parsed.path.startswith("/api/track-svg/"):
+            name = parsed.path.split("/api/track-svg/", 1)[1].replace("..", "")
+            svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "assets", "tracks", f"{name}.svg")
+            if os.path.exists(svg_path):
+                with open(svg_path, "rb") as f:
+                    svg_data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/svg+xml")
+                self.send_header("Content-Length", len(svg_data))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(svg_data)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
         elif parsed.path == "/api/state":
             with state_lock:
-                payload = json.dumps(state).encode()
+                track_name = state["session"].get("track", "")
+                out = dict(state)
+                out["track_svg"] = TRACK_SVG.get(track_name)
+                payload = json.dumps(out).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", len(payload))
