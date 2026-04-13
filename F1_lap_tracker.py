@@ -82,8 +82,13 @@ state = {
     "last_recorded_lap_ms": 0,  # tracks last lap time we saved, to catch final lap
     "car_pos": {"x": 0.0, "z": 0.0},  # current world position
     "car_speed": 0,                    # current speed km/h
+    "car_throttle": 0.0,               # throttle input 0.0–1.0
+    "car_brake": 0.0,                  # brake input 0.0–1.0
+    "car_gear": 0,                     # current gear (-1=R, 0=N, 1–8)
+    "g_lat": 0.0,                      # lateral g-force
+    "g_lon": 0.0,                      # longitudinal g-force
     "current_sector": 0,               # 0=S1, 1=S2, 2=S3
-    "lap_trace": [],                   # [{x,z,speed,sector}] current lap
+    "lap_trace": [],                   # [{x,z,speed,throttle,brake,gear,gLat,gLon,sector}] current lap
     "track_outline": [],               # reference trace from last completed lap
 }
 
@@ -594,31 +599,50 @@ _TRACE_MAX_PTS  = 4000
 def parse_motion_packet(data, player_idx):
     try:
         base = HEADER_SIZE + player_idx * MOTION_CAR_SIZE
-        if len(data) < base + 12:
+        if len(data) < base + 44:
             return
-        x = struct.unpack_from("<f", data, base + 0)[0]
-        z = struct.unpack_from("<f", data, base + 8)[0]
+        # +0 posX(f32)  +8 posZ(f32)  +36 gForceLateral(f32)  +40 gForceLongitudinal(f32)
+        x     = struct.unpack_from("<f", data, base +  0)[0]
+        z     = struct.unpack_from("<f", data, base +  8)[0]
+        g_lat = struct.unpack_from("<f", data, base + 36)[0]
+        g_lon = struct.unpack_from("<f", data, base + 40)[0]
         with state_lock:
             state["car_pos"] = {"x": round(x, 1), "z": round(z, 1)}
-            spd    = state["car_speed"]
-            sector = state["current_sector"]
-            trace  = state["lap_trace"]
+            state["g_lat"]   = round(g_lat, 3)
+            state["g_lon"]   = round(g_lon, 3)
+            spd      = state["car_speed"]
+            throttle = state["car_throttle"]
+            brake    = state["car_brake"]
+            gear     = state["car_gear"]
+            sector   = state["current_sector"]
+            trace    = state["lap_trace"]
             # Subsample: only store a point if car has moved far enough
             if len(trace) < _TRACE_MAX_PTS:
                 if not trace or (abs(x - trace[-1]["x"]) + abs(z - trace[-1]["z"])) >= _TRACE_MIN_DIST:
-                    trace.append({"x": round(x, 1), "z": round(z, 1),
-                                  "speed": spd, "sector": sector})
+                    trace.append({
+                        "x": round(x, 1), "z": round(z, 1),
+                        "speed": spd, "sector": sector,
+                        "throttle": throttle, "brake": brake, "gear": gear,
+                        "gLat": round(g_lat, 2), "gLon": round(g_lon, 2),
+                    })
     except Exception:
         pass
 
 def parse_car_telemetry_packet(data, player_idx):
     try:
         base = HEADER_SIZE + player_idx * CAR_TELEMETRY_SIZE
-        if len(data) < base + 2:
+        if len(data) < base + 16:
             return
-        speed = struct.unpack_from("<H", data, base)[0]
+        # +0 speed(u16)  +2 throttle(f32)  +6 steer(f32)  +10 brake(f32)  +15 gear(i8)
+        speed    = struct.unpack_from("<H",  data, base +  0)[0]
+        throttle = struct.unpack_from("<f",  data, base +  2)[0]
+        brake    = struct.unpack_from("<f",  data, base + 10)[0]
+        gear     = struct.unpack_from("<b",  data, base + 15)[0]
         with state_lock:
-            state["car_speed"] = int(speed)
+            state["car_speed"]    = int(speed)
+            state["car_throttle"] = round(max(0.0, min(1.0, throttle)), 3)
+            state["car_brake"]    = round(max(0.0, min(1.0, brake)),    3)
+            state["car_gear"]     = int(gear)
     except Exception:
         pass
 
@@ -1070,6 +1094,12 @@ transition: border-color .2s;
 .lb-input::placeholder { color: var(--muted); }
 .btn-toggle.active { border-color: var(--green); color: var(--green); }
 
+/* Telemetry charts */
+.telem-wrap { display: flex; gap: 10px; align-items: flex-start; margin-top: 4px; }
+.telem-charts { flex: 1; min-width: 0; }
+.telem-gforce-wrap { width: 160px; flex-shrink: 0; }
+.telem-label { font-size: .6rem; letter-spacing: .1em; color: var(--muted); margin-bottom: 2px; }
+
 /* Community leaderboard panel */
 .lb-wrap { padding-bottom: 8px; }
 tr.lb-player { background: rgba(0,214,143,.08); }
@@ -1202,6 +1232,23 @@ transition: border-color .2s, color .2s;
   </aside>
   <div class="main-col">
     <div id="lap-table"></div>
+    <div id="telemetry-section" style="display:none;margin-top:12px;">
+      <div class="panel">
+        <div class="panel-title">Telemetry</div>
+        <div class="telem-wrap">
+          <div class="telem-charts">
+            <div class="telem-label">SPEED (km/h)</div>
+            <canvas id="speed-canvas" width="600" height="72" style="width:100%;display:block;"></canvas>
+            <div class="telem-label" style="margin-top:6px;">THROTTLE &amp; BRAKE</div>
+            <canvas id="inputs-canvas" width="600" height="56" style="width:100%;display:block;"></canvas>
+          </div>
+          <div class="telem-gforce-wrap">
+            <div class="telem-label">G-FORCE</div>
+            <canvas id="gforce-canvas" width="160" height="160" style="display:block;width:100%;"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="below-grid">
       <div id="pbs-section"></div>
       <div id="sessions-section"></div>
@@ -1375,6 +1422,7 @@ async function fetchState() {
 async function clearSession() {
   await fetch('/api/clear', { method: 'POST' });
   _reviewLap = null; _reviewTotal = 0; _lapCount = 0; _sessionId = null; _updateLapNav();
+  renderTelemetry([]);
   fetchState();
   fetchPBs();
   fetchSessions();
@@ -1576,6 +1624,203 @@ function msToLap(ms) {
   return `${m}:${String(s).padStart(2,'0')}.${String(ms3).padStart(3,'0')}`;
 }
 
+// ── Telemetry Charts ──────────────────────────────────────────────────────────
+
+const _SECTOR_PALETTE = ['#e10600', '#f7c948', '#9b59b6'];
+
+function renderTelemetry(trace) {
+  const sec = document.getElementById('telemetry-section');
+  if (!trace || trace.length < 2) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  _renderSpeedChart(trace);
+  _renderInputsChart(trace);
+  _renderGForceChart(trace);
+}
+
+function _chartPad() { return { t: 6, b: 14, l: 28, r: 4 }; }
+
+function _renderSpeedChart(trace) {
+  const canvas = document.getElementById('speed-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = _chartPad();
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const n = trace.length;
+  const speeds = trace.map(p => p.speed || 0);
+  const minS = Math.min(...speeds), maxS = Math.max(...speeds, 1);
+  const rng = maxS - minS || 1;
+
+  // Grid lines every 50 km/h
+  ctx.lineWidth = 1;
+  for (let v = Math.ceil(minS / 50) * 50; v <= maxS; v += 50) {
+    const y = pad.t + ch - ((v - minS) / rng) * ch;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+    ctx.fillText(v, 0, y + 3);
+  }
+
+  // Sector colour bar at bottom
+  let secStart = 0, lastSec = trace[0].sector;
+  for (let i = 1; i <= n; i++) {
+    if (i === n || trace[i].sector !== lastSec) {
+      const x1 = pad.l + (secStart / (n - 1)) * cw;
+      const x2 = pad.l + (Math.min(i, n - 1) / (n - 1)) * cw;
+      ctx.fillStyle = _SECTOR_PALETTE[lastSec] || 'rgba(255,255,255,0.15)';
+      ctx.fillRect(x1, h - pad.b + 2, x2 - x1, 4);
+      if (i < n) { lastSec = trace[i].sector; secStart = i; }
+    }
+  }
+
+  // Speed fill
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + ch - ((speeds[i] - minS) / rng) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.lineTo(pad.l + cw, pad.t + ch); ctx.lineTo(pad.l, pad.t + ch); ctx.closePath();
+  ctx.fillStyle = 'rgba(79,195,247,0.10)'; ctx.fill();
+
+  // Speed line
+  ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + ch - ((speeds[i] - minS) / rng) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function _renderInputsChart(trace) {
+  const canvas = document.getElementById('inputs-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const hasInputs = trace.some(p => p.throttle !== undefined);
+  if (!hasInputs) {
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.font = '9px monospace';
+    ctx.fillText('THROTTLE/BRAKE — restart app to collect input data', 32, h / 2 + 4);
+    return;
+  }
+
+  const pad = { t: 2, b: 2, l: 28, r: 4 };
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const n = trace.length;
+
+  // Labels
+  ctx.font = '8px monospace';
+  ctx.fillStyle = 'rgba(0,214,143,0.8)'; ctx.fillText('THR', 0, pad.t + 9);
+  ctx.fillStyle = 'rgba(225,6,0,0.8)';   ctx.fillText('BRK', 0, h - pad.b - 2);
+
+  // Throttle fill + line
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + ch - (trace[i].throttle || 0) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.lineTo(pad.l + cw, pad.t + ch); ctx.lineTo(pad.l, pad.t + ch); ctx.closePath();
+  ctx.fillStyle = 'rgba(0,214,143,0.25)'; ctx.fill();
+  ctx.strokeStyle = '#00d68f'; ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + ch - (trace[i].throttle || 0) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Brake fill + line
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + (trace[i].brake || 0) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.lineTo(pad.l + cw, pad.t); ctx.lineTo(pad.l, pad.t); ctx.closePath();
+  ctx.fillStyle = 'rgba(225,6,0,0.22)'; ctx.fill();
+  ctx.strokeStyle = '#e10600'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + (trace[i].brake || 0) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function _renderGForceChart(trace) {
+  const canvas = document.getElementById('gforce-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const cx = w / 2, cy = h / 2;
+  const maxG = 3;
+  const scale = Math.min(w, h) / 2 - 10;
+
+  // Reference circles at 1G, 2G, 3G
+  for (let g = 1; g <= 3; g++) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, scale * g / maxG, 0, Math.PI * 2);
+    ctx.strokeStyle = g === 3 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = g === 3 ? 1.5 : 1;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '8px monospace';
+    ctx.fillText(`${g}G`, cx + scale * g / maxG + 2, cy - 2);
+  }
+
+  // Crosshairs
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, 4); ctx.lineTo(cx, h - 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(4, cy); ctx.lineTo(w - 4, cy); ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '7px monospace';
+  ctx.fillText('LAT', w - 20, cy - 3);
+  ctx.fillText('LON', cx + 3, 10);
+
+  const hasG = trace.some(p => p.gLat !== undefined);
+  if (!hasG) {
+    ctx.fillStyle = 'rgba(255,255,255,0.20)'; ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('NO DATA', cx, cy + 4);
+    ctx.textAlign = 'left';
+    return;
+  }
+
+  // Plot all points coloured by sector
+  for (let i = 0; i < trace.length; i++) {
+    const p = trace[i];
+    if (p.gLat === undefined) continue;
+    const px = cx + Math.max(-scale, Math.min(scale, (p.gLat / maxG) * scale));
+    const py = cy - Math.max(-scale, Math.min(scale, (p.gLon / maxG) * scale));
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = _SECTOR_PALETTE[p.sector] || '#aaa';
+    ctx.beginPath(); ctx.arc(px, py, 1.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Live car position: bright white dot
+  const last = trace[trace.length - 1];
+  if (last && last.gLat !== undefined) {
+    const px = cx + Math.max(-scale, Math.min(scale, (last.gLat / maxG) * scale));
+    const py = cy - Math.max(-scale, Math.min(scale, (last.gLon / maxG) * scale));
+    ctx.shadowBlur = 8; ctx.shadowColor = '#fff';
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
 // ── Track Map ──────────────────────────────────────────────────────────────────
 let _mapMode         = 'sector';
 let _loadedSvg       = null;
@@ -1725,7 +1970,9 @@ async function _loadReviewLap() {
   try {
     const r = await fetch(`/api/lap-trace/${_sessionId}/${_reviewLap}`);
     const d = await r.json();
-    renderTrackMap({ lap_trace: d.trace || [], track_outline: _lastGoodOutline, car_pos: null });
+    const trace = d.trace || [];
+    renderTrackMap({ lap_trace: trace, track_outline: _lastGoodOutline, car_pos: null });
+    renderTelemetry(trace);
   } catch(e) {}
 }
 
@@ -1751,7 +1998,10 @@ async function fetchMotion() {
         }
       }
     }
-    if (_reviewLap === null) renderTrackMap(d);
+    if (_reviewLap === null) {
+      renderTrackMap(d);
+      renderTelemetry(d.lap_trace || []);
+    }
   } catch(e) {}
 }
 
