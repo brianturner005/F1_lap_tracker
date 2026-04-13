@@ -1075,6 +1075,7 @@ transition: border-color .2s;
 tr.lb-player { background: rgba(0,214,143,.08); }
 tr.lb-player td { color: var(--green); }
 td.lb-rank { color: var(--muted); font-size: .7rem; width: 32px; }
+.sidebar .lb-wrap .lap-table-wrap { max-height: 280px; overflow-y: auto; }
 td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-weight: 700; }
 
 /* AI Debrief panel */
@@ -1197,6 +1198,7 @@ transition: border-color .2s, color .2s;
         <button class="map-mode-btn" id="lap-nav-live" onclick="lapNavLive()" style="margin-left:4px;border-color:var(--green);color:var(--green);">LIVE</button>
       </div>
     </div>
+    <div id="lb-section"></div>
   </aside>
   <div class="main-col">
     <div id="lap-table"></div>
@@ -1204,7 +1206,6 @@ transition: border-color .2s, color .2s;
       <div id="pbs-section"></div>
       <div id="sessions-section"></div>
     </div>
-    <div id="lb-section"></div>
     <div id="debrief-section"></div>
   </div>
 </div>
@@ -1373,7 +1374,7 @@ async function fetchState() {
 
 async function clearSession() {
   await fetch('/api/clear', { method: 'POST' });
-  _reviewLap = null; _lapCount = 0; _sessionId = null; _updateLapNav();
+  _reviewLap = null; _reviewTotal = 0; _lapCount = 0; _sessionId = null; _updateLapNav();
   fetchState();
   fetchPBs();
   fetchSessions();
@@ -1576,11 +1577,13 @@ function msToLap(ms) {
 }
 
 // ── Track Map ──────────────────────────────────────────────────────────────────
-let _mapMode   = 'sector';
-let _loadedSvg = null;
-let _reviewLap = null;   // null = live mode; number = reviewing that lap
-let _sessionId = null;
-let _lapCount  = 0;
+let _mapMode         = 'sector';
+let _loadedSvg       = null;
+let _reviewLap       = null;   // null = live mode; number = reviewing that lap
+let _sessionId       = null;
+let _lapCount        = 0;
+let _reviewTotal     = 0;      // lap count locked when review was entered
+let _lastGoodOutline = [];     // cached live outline so review renders always have a track shape
 
 function _updateTrackSvg(svgName) {
   const img = document.getElementById('track-svg-img');
@@ -1682,8 +1685,9 @@ function renderTrackMap(data) {
 
 // ── Lap navigator ─────────────────────────────────────────────────────────────
 function _updateLapNav() {
-  const nav = document.getElementById('lap-nav');
-  if (_lapCount === 0) { nav.style.display = 'none'; return; }
+  const nav   = document.getElementById('lap-nav');
+  const total = _reviewLap !== null ? _reviewTotal : _lapCount;
+  if (total === 0) { nav.style.display = 'none'; return; }
   nav.style.display = 'flex';
   const liveBtn = document.getElementById('lap-nav-live');
   const label   = document.getElementById('lap-nav-label');
@@ -1692,16 +1696,18 @@ function _updateLapNav() {
     liveBtn.style.opacity = '0.3';
     liveBtn.style.pointerEvents = 'none';
   } else {
-    label.textContent = `LAP ${_reviewLap} / ${_lapCount}`;
+    label.textContent = `LAP ${_reviewLap} / ${_reviewTotal}`;
     liveBtn.style.opacity = '1';
     liveBtn.style.pointerEvents = 'auto';
   }
 }
 
 function lapNavStep(dir) {
-  if (_lapCount === 0) return;
-  const current = _reviewLap === null ? _lapCount + 1 : _reviewLap;
-  const next = Math.max(1, Math.min(_lapCount, current + dir));
+  const total = _reviewLap !== null ? _reviewTotal : _lapCount;
+  if (total === 0) return;
+  if (_reviewLap === null) _reviewTotal = _lapCount;  // lock count when entering review
+  const current = _reviewLap === null ? _reviewTotal + 1 : _reviewLap;
+  const next = Math.max(1, Math.min(_reviewTotal, current + dir));
   if (next === current && _reviewLap !== null) return;
   _reviewLap = next;
   _updateLapNav();
@@ -1709,7 +1715,8 @@ function lapNavStep(dir) {
 }
 
 function lapNavLive() {
-  _reviewLap = null;
+  _reviewLap   = null;
+  _reviewTotal = 0;
   _updateLapNav();
 }
 
@@ -1718,7 +1725,7 @@ async function _loadReviewLap() {
   try {
     const r = await fetch(`/api/lap-trace/${_sessionId}/${_reviewLap}`);
     const d = await r.json();
-    renderTrackMap({ lap_trace: d.trace, track_outline: [], car_pos: null });
+    renderTrackMap({ lap_trace: d.trace || [], track_outline: _lastGoodOutline, car_pos: null });
   } catch(e) {}
 }
 
@@ -1726,15 +1733,22 @@ async function fetchMotion() {
   try {
     const r = await fetch('/api/motion');
     const d = await r.json();
+    // Cache outline for review mode (keep last good one even after race ends)
+    if (d.track_outline && d.track_outline.length >= 10) _lastGoodOutline = d.track_outline;
     // Update lap count and session id from live state
     if (lastData) {
       const newCount = lastData.laps ? lastData.laps.length : 0;
-      if (newCount !== _lapCount) { _lapCount = newCount; _updateLapNav(); }
+      if (newCount !== _lapCount) {
+        _lapCount = newCount;
+        if (_reviewLap === null) _updateLapNav();  // don't disrupt review nav label
+      }
       if (lastData.current_session_id && lastData.current_session_id !== _sessionId) {
         _sessionId = lastData.current_session_id;
-        _reviewLap = null;
-        _lapCount  = 0;
-        _updateLapNav();
+        if (_reviewLap === null) {  // only reset when not actively reviewing a lap
+          _lapCount    = 0;
+          _reviewTotal = 0;
+          _updateLapNav();
+        }
       }
     }
     if (_reviewLap === null) renderTrackMap(d);
