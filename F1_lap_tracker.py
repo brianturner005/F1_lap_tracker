@@ -934,7 +934,8 @@ overflow: hidden;
 /* Collapsible panels */
 .panel-title.collapsible { cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; }
 .panel-title.collapsible:hover { color: #fff; }
-.collapse-arrow { font-size: .7rem; color: var(--muted); transition: transform .15s; display: inline-block; }
+.collapse-arrow { font-size: .85rem; color: #aaa; transition: transform .2s; display: inline-block; background: rgba(255,255,255,.08); border-radius: 3px; padding: 1px 5px; line-height: 1.4; }
+.panel-title.collapsible:hover .collapse-arrow { color: #fff; background: rgba(255,255,255,.16); }
 .panel.collapsed .collapse-arrow { transform: rotate(-90deg); }
 .panel.collapsed .collapsible-body { display: none; }
 .panel::before {
