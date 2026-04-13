@@ -1100,6 +1100,28 @@ transition: border-color .2s;
 .lb-input::placeholder { color: var(--muted); }
 .btn-toggle.active { border-color: var(--green); color: var(--green); }
 
+/* Sector mini-best highlight */
+td.sector.s-best { color: var(--purple) !important; font-weight: 700; }
+
+/* Toast notifications */
+#toast-container { position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+.toast { background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:10px 18px; font-size:.78rem; letter-spacing:.04em; opacity:1; transition:opacity .35s; min-width:220px; }
+.toast.pb     { border-color:var(--purple); color:var(--purple); }
+.toast.sector { border-color:var(--yellow); color:var(--yellow); }
+.toast.best   { border-color:var(--green);  color:var(--green);  }
+
+/* Lap comparison */
+.comp-cell { white-space:nowrap; }
+.comp-btn { font-size:.58rem; padding:1px 5px; border-radius:2px; border:1px solid var(--border); background:none; cursor:pointer; color:var(--muted); letter-spacing:.06em; margin-left:2px; line-height:1.6; }
+.comp-btn:hover { opacity:.75; }
+.comp-btn.a-sel { border-color:#4fc3f7; color:#4fc3f7; }
+.comp-btn.b-sel { border-color:#f7a44c; color:#f7a44c; }
+.comp-tag-a { color:#4fc3f7; }
+.comp-tag-b { color:#f7a44c; }
+#comp-bar { display:none; align-items:center; gap:10px; padding:6px 12px; background:rgba(255,255,255,.04); border:1px solid var(--border); border-radius:4px; font-size:.72rem; letter-spacing:.05em; margin-bottom:8px; }
+tr.comp-a-row td { background:rgba(79,195,247,.07); }
+tr.comp-b-row td { background:rgba(247,164,76,.07); }
+
 /* Telemetry charts */
 .telem-wrap { display: flex; gap: 10px; align-items: flex-start; margin-top: 4px; }
 .telem-charts { flex: 1; min-width: 0; }
@@ -1237,10 +1259,16 @@ transition: border-color .2s, color .2s;
     <div id="lb-section"></div>
   </aside>
   <div class="main-col">
+    <div id="comp-bar">
+      <span class="comp-tag-a" id="comp-label-a">A: —</span>
+      <span style="color:var(--muted)">vs</span>
+      <span class="comp-tag-b" id="comp-label-b">B: —</span>
+      <button onclick="clearComparison()" style="margin-left:auto;font-size:.6rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;">CLEAR</button>
+    </div>
     <div id="lap-table"></div>
     <div id="telemetry-section" style="display:none;margin-top:12px;">
       <div class="panel">
-        <div class="panel-title">Telemetry</div>
+        <div class="panel-title" id="telem-title">Telemetry</div>
         <div class="telem-wrap">
           <div class="telem-charts">
             <div class="telem-label">SPEED (km/h)</div>
@@ -1428,7 +1456,9 @@ async function fetchState() {
 async function clearSession() {
   await fetch('/api/clear', { method: 'POST' });
   _reviewLap = null; _reviewTotal = 0; _lapCount = 0; _sessionId = null; _updateLapNav();
-  renderTelemetry([]);
+  _compareA = null; _compareB = null; _compareTraceA = null; _compareTraceB = null;
+  _toastedLapCount = 0; _sBestMs = [Infinity, Infinity, Infinity];
+  _updateCompBar(); renderTelemetry([]);
   fetchState();
   fetchPBs();
   fetchSessions();
@@ -1444,6 +1474,108 @@ async function fetchPBs() {
     const pbs = await r.json();
     renderPBs(pbs);
   } catch(e) {}
+}
+
+// ── Toast notifications ───────────────────────────────────────────────────────
+let _toastedLapCount = 0;
+let _sBestMs = [Infinity, Infinity, Infinity]; // session-best S1/S2/S3 in ms
+
+function showToast(msg, type = 'info', duration = 3500) {
+  const c = document.getElementById('toast-container');
+  if (!c) return;
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 380);
+  }, duration);
+}
+
+function _checkToasts(laps) {
+  for (let i = _toastedLapCount; i < laps.length; i++) {
+    const lap = laps[i];
+    if (lap.is_track_pb) {
+      showToast('🏆  New Track PB  ' + lap.lap_time, 'pb');
+    }
+    if (!lap.invalid) {
+      if (lap.s1_ms > 0 && lap.s1_ms < _sBestMs[0]) {
+        if (_sBestMs[0] !== Infinity) showToast('🟣  Best S1  ' + lap.s1, 'sector');
+        _sBestMs[0] = lap.s1_ms;
+      }
+      if (lap.s2_ms > 0 && lap.s2_ms < _sBestMs[1]) {
+        if (_sBestMs[1] !== Infinity) showToast('🟣  Best S2  ' + lap.s2, 'sector');
+        _sBestMs[1] = lap.s2_ms;
+      }
+      if (lap.s3_ms > 0 && lap.s3_ms < _sBestMs[2]) {
+        if (_sBestMs[2] !== Infinity) showToast('🟣  Best S3  ' + lap.s3, 'sector');
+        _sBestMs[2] = lap.s3_ms;
+      }
+    }
+  }
+  _toastedLapCount = laps.length;
+}
+
+// ── Lap comparison ────────────────────────────────────────────────────────────
+let _compareA = null, _compareB = null;
+let _compareTraceA = null, _compareTraceB = null;
+
+function _updateCompBar() {
+  const bar = document.getElementById('comp-bar');
+  if (!bar) return;
+  const active = _compareA !== null || _compareB !== null;
+  bar.style.display = active ? 'flex' : 'none';
+  document.getElementById('comp-label-a').textContent = _compareA !== null ? `A: Lap ${_compareA}` : 'A: —';
+  document.getElementById('comp-label-b').textContent = _compareB !== null ? `B: Lap ${_compareB}` : 'B: —';
+}
+
+async function selectCompareLap(slot, lapNum) {
+  if (slot === 'A') { _compareA = lapNum; _compareTraceA = null; }
+  else              { _compareB = lapNum; _compareTraceB = null; }
+  _updateCompBar();
+  // Fetch the trace for this lap
+  const sid = _sessionId;
+  if (sid) {
+    try {
+      const r = await fetch(`/api/lap-trace/${sid}/${lapNum}`);
+      const d = await r.json();
+      if (slot === 'A') _compareTraceA = d.trace || [];
+      else              _compareTraceB = d.trace || [];
+    } catch(e) {}
+  }
+  _renderComparisonOrLive();
+  if (lastData) render(lastData); // refresh row highlight + button states
+}
+
+function clearComparison() {
+  _compareA = null; _compareB = null;
+  _compareTraceA = null; _compareTraceB = null;
+  _updateCompBar();
+  const title = document.getElementById('telem-title');
+  if (title) title.textContent = 'Telemetry';
+  if (lastData) render(lastData);
+  // Restore live or review telemetry
+  if (_reviewLap !== null && _compareTraceA === null) {
+    _loadReviewLap();
+  } else if (lastData) {
+    renderTelemetry(lastData.lap_trace || []);
+  }
+}
+
+function _renderComparisonOrLive() {
+  const tA = _compareTraceA, tB = _compareTraceB;
+  if (tA && tA.length >= 2 && tB && tB.length >= 2) {
+    renderTelemetry(tA, tB);
+  } else if (tA && tA.length >= 2) {
+    renderTelemetry(tA);
+  } else if (tB && tB.length >= 2) {
+    renderTelemetry(tB);
+  }
+}
+
+function _comparisonActive() {
+  return _compareA !== null || _compareB !== null;
 }
 
 function _togglePanel(panelId) {
@@ -1588,9 +1720,17 @@ function render(d) {
   </div>`;
 
   // Lap table
+  _checkToasts(d.laps);
+
+  // Find best sector times across valid laps (for mini-best highlighting)
+  const validLaps = d.laps.filter(l => !l.invalid);
+  const bestS1ms = Math.min(...validLaps.filter(l => l.s1_ms > 0).map(l => l.s1_ms), Infinity);
+  const bestS2ms = Math.min(...validLaps.filter(l => l.s2_ms > 0).map(l => l.s2_ms), Infinity);
+  const bestS3ms = Math.min(...validLaps.filter(l => l.s3_ms > 0).map(l => l.s3_ms), Infinity);
+
   let rows = '';
   if (d.laps.length === 0) {
-    rows = `<tr><td colspan="8" class="waiting"><div class="big-icon">🏎</div>
+    rows = `<tr><td colspan="9" class="waiting"><div class="big-icon">🏎</div>
       <p>No laps recorded yet.<br>
       Make sure UDP telemetry is <code>ON</code> in F1 25 settings<br>
       IP: <code>127.0.0.1</code> &nbsp; Port: <code>20777</code></p></td></tr>`;
@@ -1600,21 +1740,34 @@ function render(d) {
       const isBest    = lap.is_best;
       const isTrackPB = lap.is_track_pb;
       const isInvalid = lap.invalid;
+      const isCompA   = _compareA === lap.lap_num;
+      const isCompB   = _compareB === lap.lap_num;
+      const s1Best = !isInvalid && lap.s1_ms > 0 && lap.s1_ms === bestS1ms;
+      const s2Best = !isInvalid && lap.s2_ms > 0 && lap.s2_ms === bestS2ms;
+      const s3Best = !isInvalid && lap.s3_ms > 0 && lap.s3_ms === bestS3ms;
       const deltaClass = lap.delta === 'PB!'  ? 'pb-text'
                        : lap.delta === 'BEST' ? 'best-text'
                        : (lap.delta && lap.delta.startsWith('+')) ? 'positive' : '';
       const timeLabel = isTrackPB ? lap.lap_time + ' 🏆'
                       : isBest    ? lap.lap_time + ' ★'
                       : lap.lap_time;
-      rows += `<tr class="${isBest ? 'best-lap' : ''} ${isTrackPB ? 'track-pb-lap' : ''} ${isInvalid ? 'invalid' : ''}">
+      const rowClass = [
+        isBest ? 'best-lap' : '', isTrackPB ? 'track-pb-lap' : '',
+        isInvalid ? 'invalid' : '', isCompA ? 'comp-a-row' : '', isCompB ? 'comp-b-row' : ''
+      ].join(' ');
+      rows += `<tr class="${rowClass}">
         <td class="lap-num">${lap.lap_num}</td>
         <td>${compoundPill(lap.compound)}</td>
-        <td class="lap-time ${isTrackPB ? 'best' : isBest ? 'best' : ''}">${timeLabel}</td>
+        <td class="lap-time ${isTrackPB || isBest ? 'best' : ''}">${timeLabel}</td>
         <td class="delta ${deltaClass}">${lap.delta || ''}</td>
-        <td class="sector">${lap.s1 !== '--:--.---' ? lap.s1 : '—'}</td>
-        <td class="sector">${lap.s2 !== '--:--.---' ? lap.s2 : '—'}</td>
-        <td class="sector">${lap.s3 !== '--:--.---' ? lap.s3 : '—'}</td>
+        <td class="sector${s1Best ? ' s-best' : ''}">${lap.s1 !== '--:--.---' ? lap.s1 : '—'}</td>
+        <td class="sector${s2Best ? ' s-best' : ''}">${lap.s2 !== '--:--.---' ? lap.s2 : '—'}</td>
+        <td class="sector${s3Best ? ' s-best' : ''}">${lap.s3 !== '--:--.---' ? lap.s3 : '—'}</td>
         ${isInvalid ? '<td><span class="invalid-pill">INVALID</span></td>' : '<td></td>'}
+        <td class="comp-cell">
+          <button class="comp-btn${isCompA ? ' a-sel' : ''}" onclick="selectCompareLap('A',${lap.lap_num})">A</button>
+          <button class="comp-btn${isCompB ? ' b-sel' : ''}" onclick="selectCompareLap('B',${lap.lap_num})">B</button>
+        </td>
       </tr>`;
     }
   }
@@ -1627,7 +1780,7 @@ function render(d) {
     <div class="lap-table-wrap">
       <table>
         <thead><tr>
-          <th>LAP</th><th>TYRE</th><th>TIME</th><th>DELTA</th><th>S1</th><th>S2</th><th>S3</th><th></th>
+          <th>LAP</th><th>TYRE</th><th>TIME</th><th>DELTA</th><th>S1</th><th>S2</th><th>S3</th><th></th><th>CMP</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -1652,18 +1805,27 @@ function msToLap(ms) {
 
 const _SECTOR_PALETTE = ['#e10600', '#f7c948', '#9b59b6'];
 
-function renderTelemetry(trace) {
+function renderTelemetry(traceA, traceB = null) {
   const sec = document.getElementById('telemetry-section');
-  if (!trace || trace.length < 2) { sec.style.display = 'none'; return; }
+  if (!traceA || traceA.length < 2) { sec.style.display = 'none'; return; }
   sec.style.display = 'block';
-  _renderSpeedChart(trace);
-  _renderInputsChart(trace);
-  _renderGForceChart(trace);
+  const title = document.getElementById('telem-title');
+  if (title) {
+    if (traceB && traceB.length >= 2 && _compareA !== null && _compareB !== null) {
+      title.innerHTML = `Telemetry &nbsp;<span class="comp-tag-a">LAP ${_compareA}</span> <span style="color:var(--muted)">vs</span> <span class="comp-tag-b">LAP ${_compareB}</span>`;
+    } else {
+      title.textContent = 'Telemetry';
+    }
+  }
+  _renderSpeedChart(traceA, traceB);
+  _renderInputsChart(traceA, traceB);
+  _renderGForceChart(traceA, traceB);
 }
 
 function _chartPad() { return { t: 6, b: 14, l: 28, r: 4 }; }
 
-function _renderSpeedChart(trace) {
+
+function _renderSpeedChart(traceA, traceB = null) {
   const canvas = document.getElementById('speed-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -1672,9 +1834,11 @@ function _renderSpeedChart(trace) {
 
   const pad = _chartPad();
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
-  const n = trace.length;
-  const speeds = trace.map(p => p.speed || 0);
-  const minS = Math.min(...speeds), maxS = Math.max(...speeds, 1);
+  const nA = traceA.length;
+  const speedsA = traceA.map(p => p.speed || 0);
+  const speedsB = traceB ? traceB.map(p => p.speed || 0) : [];
+  const allSpeeds = [...speedsA, ...speedsB];
+  const minS = Math.min(...allSpeeds), maxS = Math.max(...allSpeeds, 1);
   const rng = maxS - minS || 1;
 
   // Grid lines every 50 km/h
@@ -1687,47 +1851,102 @@ function _renderSpeedChart(trace) {
     ctx.fillText(v, 0, y + 3);
   }
 
-  // Sector colour bar at bottom
-  let secStart = 0, lastSec = trace[0].sector;
-  for (let i = 1; i <= n; i++) {
-    if (i === n || trace[i].sector !== lastSec) {
-      const x1 = pad.l + (secStart / (n - 1)) * cw;
-      const x2 = pad.l + (Math.min(i, n - 1) / (n - 1)) * cw;
+  // Sector colour bar (from trace A)
+  let secStart = 0, lastSec = traceA[0].sector;
+  for (let i = 1; i <= nA; i++) {
+    if (i === nA || traceA[i].sector !== lastSec) {
+      const x1 = pad.l + (secStart / (nA - 1)) * cw;
+      const x2 = pad.l + (Math.min(i, nA - 1) / (nA - 1)) * cw;
       ctx.fillStyle = _SECTOR_PALETTE[lastSec] || 'rgba(255,255,255,0.15)';
       ctx.fillRect(x1, h - pad.b + 2, x2 - x1, 4);
-      if (i < n) { lastSec = trace[i].sector; secStart = i; }
+      if (i < nA) { lastSec = traceA[i].sector; secStart = i; }
     }
   }
 
-  // Speed fill
+  // Trace B (orange, behind A)
+  if (traceB && traceB.length >= 2) {
+    const nB = traceB.length;
+    ctx.beginPath();
+    for (let i = 0; i < nB; i++) {
+      const x = pad.l + (i / (nB - 1)) * cw;
+      const y = pad.t + ch - ((speedsB[i] - minS) / rng) * ch;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.lineTo(pad.l + cw, pad.t + ch); ctx.lineTo(pad.l, pad.t + ch); ctx.closePath();
+    ctx.fillStyle = 'rgba(247,164,76,0.10)'; ctx.fill();
+    ctx.beginPath();
+    for (let i = 0; i < nB; i++) {
+      const x = pad.l + (i / (nB - 1)) * cw;
+      const y = pad.t + ch - ((speedsB[i] - minS) / rng) * ch;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#f7a44c'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+  }
+
+  // Trace A (blue, on top)
   ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const x = pad.l + (i / (n - 1)) * cw;
-    const y = pad.t + ch - ((speeds[i] - minS) / rng) * ch;
+  for (let i = 0; i < nA; i++) {
+    const x = pad.l + (i / (nA - 1)) * cw;
+    const y = pad.t + ch - ((speedsA[i] - minS) / rng) * ch;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   }
   ctx.lineTo(pad.l + cw, pad.t + ch); ctx.lineTo(pad.l, pad.t + ch); ctx.closePath();
   ctx.fillStyle = 'rgba(79,195,247,0.10)'; ctx.fill();
+  ctx.beginPath();
+  for (let i = 0; i < nA; i++) {
+    const x = pad.l + (i / (nA - 1)) * cw;
+    const y = pad.t + ch - ((speedsA[i] - minS) / rng) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+}
 
-  // Speed line
-  ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+function _drawInputLines(ctx, trace, pad, cw, ch, thrColor, thrFill, brkColor, brkFill) {
+  const n = trace.length;
+  // Throttle fill
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const x = pad.l + (i / (n - 1)) * cw;
-    const y = pad.t + ch - ((speeds[i] - minS) / rng) * ch;
+    const y = pad.t + ch - (trace[i].throttle || 0) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.lineTo(pad.l + cw, pad.t + ch); ctx.lineTo(pad.l, pad.t + ch); ctx.closePath();
+  ctx.fillStyle = thrFill; ctx.fill();
+  ctx.strokeStyle = thrColor; ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + ch - (trace[i].throttle || 0) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // Brake fill
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + (trace[i].brake || 0) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.lineTo(pad.l + cw, pad.t); ctx.lineTo(pad.l, pad.t); ctx.closePath();
+  ctx.fillStyle = brkFill; ctx.fill();
+  ctx.strokeStyle = brkColor; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + (i / (n - 1)) * cw;
+    const y = pad.t + (trace[i].brake || 0) * ch;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   }
   ctx.stroke();
 }
 
-function _renderInputsChart(trace) {
+function _renderInputsChart(traceA, traceB = null) {
   const canvas = document.getElementById('inputs-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  const hasInputs = trace.some(p => p.throttle !== undefined);
+  const hasInputs = traceA.some(p => p.throttle !== undefined);
   if (!hasInputs) {
     ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.font = '9px monospace';
     ctx.fillText('THROTTLE/BRAKE — restart app to collect input data', 32, h / 2 + 4);
@@ -1736,51 +1955,26 @@ function _renderInputsChart(trace) {
 
   const pad = { t: 2, b: 2, l: 28, r: 4 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
-  const n = trace.length;
 
-  // Labels
   ctx.font = '8px monospace';
   ctx.fillStyle = 'rgba(0,214,143,0.8)'; ctx.fillText('THR', 0, pad.t + 9);
   ctx.fillStyle = 'rgba(225,6,0,0.8)';   ctx.fillText('BRK', 0, h - pad.b - 2);
 
-  // Throttle fill + line
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const x = pad.l + (i / (n - 1)) * cw;
-    const y = pad.t + ch - (trace[i].throttle || 0) * ch;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  // B first (behind), then A on top
+  if (traceB && traceB.length >= 2 && traceB.some(p => p.throttle !== undefined)) {
+    _drawInputLines(ctx, traceB, pad, cw, ch,
+      '#c07830', 'rgba(192,120,48,0.15)',
+      '#c05000', 'rgba(192,80,0,0.12)');
   }
-  ctx.lineTo(pad.l + cw, pad.t + ch); ctx.lineTo(pad.l, pad.t + ch); ctx.closePath();
-  ctx.fillStyle = 'rgba(0,214,143,0.25)'; ctx.fill();
-  ctx.strokeStyle = '#00d68f'; ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const x = pad.l + (i / (n - 1)) * cw;
-    const y = pad.t + ch - (trace[i].throttle || 0) * ch;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // Brake fill + line
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const x = pad.l + (i / (n - 1)) * cw;
-    const y = pad.t + (trace[i].brake || 0) * ch;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-  ctx.lineTo(pad.l + cw, pad.t); ctx.lineTo(pad.l, pad.t); ctx.closePath();
-  ctx.fillStyle = 'rgba(225,6,0,0.22)'; ctx.fill();
-  ctx.strokeStyle = '#e10600'; ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const x = pad.l + (i / (n - 1)) * cw;
-    const y = pad.t + (trace[i].brake || 0) * ch;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-  ctx.stroke();
+  _drawInputLines(ctx, traceA, pad, cw, ch,
+    '#00d68f', 'rgba(0,214,143,0.25)',
+    '#e10600', 'rgba(225,6,0,0.22)');
 }
 
-function _renderGForceChart(trace) {
+function _renderGForceChart(traceA, traceB = null) {
+  return _renderGForceChartImpl(traceA, traceB);
+}
+function _renderGForceChartImpl(traceA, traceB) {
   const canvas = document.getElementById('gforce-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -1812,7 +2006,7 @@ function _renderGForceChart(trace) {
   ctx.fillText('LAT', w - 20, cy - 3);
   ctx.fillText('LON', cx + 3, 10);
 
-  const hasG = trace.some(p => p.gLat !== undefined);
+  const hasG = traceA.some(p => p.gLat !== undefined);
   if (!hasG) {
     ctx.fillStyle = 'rgba(255,255,255,0.20)'; ctx.font = '9px monospace';
     ctx.textAlign = 'center';
@@ -1821,9 +2015,20 @@ function _renderGForceChart(trace) {
     return;
   }
 
-  // Plot all points coloured by sector
-  for (let i = 0; i < trace.length; i++) {
-    const p = trace[i];
+  // Trace B dots (orange, behind A)
+  if (traceB && traceB.length >= 2) {
+    for (const p of traceB) {
+      if (p.gLat === undefined) continue;
+      const px = cx + Math.max(-scale, Math.min(scale, (p.gLat / maxG) * scale));
+      const py = cy - Math.max(-scale, Math.min(scale, (p.gLon / maxG) * scale));
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = '#f7a44c';
+      ctx.beginPath(); ctx.arc(px, py, 1.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Trace A dots coloured by sector
+  for (const p of traceA) {
     if (p.gLat === undefined) continue;
     const px = cx + Math.max(-scale, Math.min(scale, (p.gLat / maxG) * scale));
     const py = cy - Math.max(-scale, Math.min(scale, (p.gLon / maxG) * scale));
@@ -1833,8 +2038,8 @@ function _renderGForceChart(trace) {
   }
   ctx.globalAlpha = 1;
 
-  // Live car position: bright white dot
-  const last = trace[trace.length - 1];
+  // Last point: bright white dot
+  const last = traceA[traceA.length - 1];
   if (last && last.gLat !== undefined) {
     const px = cx + Math.max(-scale, Math.min(scale, (last.gLat / maxG) * scale));
     const py = cy - Math.max(-scale, Math.min(scale, (last.gLon / maxG) * scale));
@@ -1996,7 +2201,7 @@ async function _loadReviewLap() {
     const d = await r.json();
     const trace = d.trace || [];
     renderTrackMap({ lap_trace: trace, track_outline: _lastGoodOutline, car_pos: null });
-    renderTelemetry(trace);
+    if (!_comparisonActive()) renderTelemetry(trace);
   } catch(e) {}
 }
 
@@ -2024,7 +2229,7 @@ async function fetchMotion() {
     }
     if (_reviewLap === null) {
       renderTrackMap(d);
-      renderTelemetry(d.lap_trace || []);
+      if (!_comparisonActive()) renderTelemetry(d.lap_trace || []);
     }
   } catch(e) {}
 }
@@ -2042,6 +2247,7 @@ setInterval(fetchLeaderboard, 60000);
 setInterval(fetchMotion, 250);
 </script>
 
+<div id="toast-container"></div>
 </body>
 </html>"""
 
