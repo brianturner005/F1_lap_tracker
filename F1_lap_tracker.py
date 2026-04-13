@@ -899,7 +899,7 @@ display: flex;
 align-items: flex-start;
 }
 .sidebar {
-width: 320px;
+width: 380px;
 flex-shrink: 0;
 position: sticky;
 top: 0;
