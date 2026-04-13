@@ -931,6 +931,12 @@ padding: 16px;
 position: relative;
 overflow: hidden;
 }
+/* Collapsible panels */
+.panel-title.collapsible { cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; }
+.panel-title.collapsible:hover { color: #fff; }
+.collapse-arrow { font-size: .7rem; color: var(--muted); transition: transform .15s; display: inline-block; }
+.panel.collapsed .collapse-arrow { transform: rotate(-90deg); }
+.panel.collapsed .collapsible-body { display: none; }
 .panel::before {
 content: '';
 position: absolute; top: 0; left: 0; right: 0; height: 2px;
@@ -1440,6 +1446,16 @@ async function fetchPBs() {
   } catch(e) {}
 }
 
+function _togglePanel(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) return;
+  const collapsed = el.classList.toggle('collapsed');
+  localStorage.setItem('collapsed_' + panelId, collapsed ? '1' : '0');
+}
+function _isCollapsed(panelId) {
+  return localStorage.getItem('collapsed_' + panelId) === '1';
+}
+
 function renderPBs(pbs) {
   const el = document.getElementById('pbs-section');
   if (!pbs || pbs.length === 0) { el.innerHTML = ''; return; }
@@ -1454,9 +1470,13 @@ function renderPBs(pbs) {
       <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
     </tr>`;
   }
-  el.innerHTML = `<div class="panel">
-    <div class="panel-title">Personal Bests — All Time</div>
-    <div class="lap-table-wrap">
+  const pbsCollapsed = _isCollapsed('pbs-panel');
+  el.innerHTML = `<div class="panel${pbsCollapsed ? ' collapsed' : ''}" id="pbs-panel">
+    <div class="panel-title collapsible" onclick="_togglePanel('pbs-panel')">
+      <span>Personal Bests — All Time</span>
+      <span class="collapse-arrow">▾</span>
+    </div>
+    <div class="collapsible-body lap-table-wrap">
       <table>
         <thead><tr>
           <th>TRACK</th><th>TYPE</th><th>TIME</th><th>TYRE</th><th>SET</th>
@@ -1492,9 +1512,13 @@ function renderSessions(sessions) {
       <td><a class="export-link" href="/api/sessions/${s.id}/export">CSV</a></td>
     </tr>`;
   }
-  el.innerHTML = `<div class="panel">
-    <div class="panel-title">Past Sessions</div>
-    <div class="lap-table-wrap">
+  const sessCollapsed = _isCollapsed('sessions-panel');
+  el.innerHTML = `<div class="panel${sessCollapsed ? ' collapsed' : ''}" id="sessions-panel">
+    <div class="panel-title collapsible" onclick="_togglePanel('sessions-panel')">
+      <span>Past Sessions</span>
+      <span class="collapse-arrow">▾</span>
+    </div>
+    <div class="collapsible-body lap-table-wrap">
       <table>
         <thead><tr>
           <th>#</th><th>TRACK</th><th>TYPE</th><th>WEATHER</th><th>STARTED</th><th>ENDED</th><th></th>
