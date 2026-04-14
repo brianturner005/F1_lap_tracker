@@ -1,24 +1,30 @@
 # Pitwall IQ
 
-A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Captures lap times, sector splits, and session data automatically via the game's built-in UDP telemetry — no mods or third-party middleware required.
+A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Captures lap times, sector splits, live telemetry, and race results automatically via the game's built-in UDP telemetry — no mods or third-party middleware required.
 
 -----
 
 ## Features
 
 - **Auto-capture** — lap times recorded the instant you cross the finish line
-- **Sector splits** — S1, S2, and S3 times per lap
+- **Sector splits** — S1, S2, and S3 times per lap with mini-best highlighting (best sector per session highlighted purple)
 - **Best lap tracking** — personal best highlighted in gold with delta for every other lap
 - **Invalid lap flagging** — track limits violations marked clearly
 - **Session info** — track name, session type (Race, Qualifying, Practice, etc.), and weather pulled live from telemetry
 - **Session storage** — every session and lap is automatically saved to a local SQLite database (`f1_laps.db`) so your data persists between runs
-- **Past sessions panel** — browse all previous sessions directly in the dashboard
+- **Toast notifications** — pop-up alerts for new track PBs and sector bests
+- **Lap comparison overlay** — select any two laps from the table to compare their speed, inputs, and G-force side-by-side
+- **Live track map** — animated car position with sector colouring or speed heatmap; browse any previous lap with the arrow navigation
+- **Live telemetry charts** — speed trace, throttle & brake inputs, and a G-force circle updated in real time
+- **Career stats tab** — tracks race results (position, points, grid, fastest lap) across every session; shows wins, podiums, points total, and DNFs
+- **Past sessions panel** — browse all previous sessions directly in the dashboard (collapsible)
 - **CSV export** — download the current session or any past session as a CSV file
 - **Team themes** — choose a colour theme for all 10 F1 2025 constructors from a dropdown in the header; preference is saved in the browser
 - **Tyre compound tracking** — compound (Soft/Medium/Hard/Inter/Wet) recorded per lap with colour-coded pills in the lap table
-- **Personal bests** — all-time best lap per track and session type stored in the database; persists across restarts and sessions
-- **AI lap debrief** — opt-in feature that sends your session data to Azure OpenAI and returns a race-engineer-style written debrief covering pace, sectors, tyres, and recommendations
-- **Community leaderboard** — opt-in feature to compare your track PBs with other players via a self-hosted Azure backend; top-25 panel in the dashboard
+- **Personal bests** — all-time best lap per track and session type stored in the database; persists across restarts and sessions (collapsible)
+- **AI lap debrief** — click AI DEBRIEF at any time to get a race-engineer-style written analysis of your session; built-in, no API key required (10 debriefs/day)
+- **Community leaderboard** — compare your track PBs with other Pitwall IQ users; built-in, no configuration required
+- **One-click launchers** — double-click to start on Windows, macOS, or Linux; browser opens automatically
 - **Browser dashboard** — works on your laptop or any device on the same local network
 
 -----
@@ -29,68 +35,131 @@ A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Capture
 
 No third-party packages required — everything uses the Python standard library.
 
-> SQLite is part of Python's standard library. The optional AI debrief and community leaderboard features use `urllib` (also stdlib) to call Azure.
+> SQLite is part of Python's standard library. The AI debrief and community leaderboard features use `urllib` (also stdlib) to communicate with the shared Pitwall IQ backend.
 
 -----
 
-## Setup
+## Quick Start
 
 ### 1. In-game telemetry (one-time)
 
 In F1 25, go to **Settings → Telemetry Settings** and configure:
 
-|Setting       |Value         |
-|--------------|--------------|
-|UDP Telemetry |**On**        |
-|UDP Format    |**2025**      |
-|UDP IP Address|**127.0.0.1** |
-|UDP Port      |**20777**     |
-|Broadcast Mode|**Off**       |
+| Setting        | Value         |
+|----------------|---------------|
+| UDP Telemetry  | **On**        |
+| UDP Format     | **2025**      |
+| UDP IP Address | **127.0.0.1** |
+| UDP Port       | **20777**     |
+| Broadcast Mode | **Off**       |
 
-### 2. Run the tracker
+### 2. Launch the app
 
+**Windows** — double-click `launch_windows.bat`
+
+**macOS** — run once to set up, then double-click to launch every time:
 ```bash
-python F1_lap_tracker.py
+bash setup_shortcut.sh
+```
+Then double-click `launch_mac.command` in Finder. (First launch: right-click → Open if macOS blocks it.)
+
+**Linux** — run once to install a desktop shortcut, then launch from your app menu:
+```bash
+bash setup_shortcut.sh
+```
+Or just run directly:
+```bash
+python3 F1_lap_tracker.py
 ```
 
-On first run a `f1_laps.db` file is created in the same directory. The console will print its full path.
-
-### 3. Open the dashboard
-
-Navigate to **http://localhost:5000** in any browser while the script is running.
+All launchers automatically open **http://localhost:5000** in your default browser once the server is ready.
 
 -----
 
 ## Usage
 
-Start the script before or after launching F1 25 — order doesn't matter. Once the game starts broadcasting telemetry (typically when you enter a session), the dashboard status indicator will switch to **LIVE TELEMETRY** and laps will begin populating automatically.
+Start the launcher before or after launching F1 25 — order doesn't matter. Once the game starts broadcasting telemetry (typically when you enter a session), the dashboard status indicator will switch to **LIVE TELEMETRY** and data will begin populating automatically.
 
-### Buttons & controls
+### Header controls
 
 | Control | What it does |
 |---|---|
 | **Theme dropdown** | Switch between F1 default and all 10 team colour themes. Choice is remembered in the browser. |
-| **AI Debrief** | Request a race-engineer debrief from Azure OpenAI for the current session (shown only when AI is configured). |
+| **AI DEBRIEF** | Request a race-engineer debrief for the current session. Built-in — no configuration needed. |
 | **Export CSV** | Download the current session's laps as a `.csv` file. |
 | **Clear Session** | Resets the live lap table and starts a fresh session in the database. Previous session data is kept. |
-| **Leaderboard toggle** | Enable or disable sharing your PBs with the community leaderboard (opt-in only). |
+| **SUBMIT PBs toggle** | Enable or disable sharing your PBs with the community leaderboard (opt-in only). |
 | **Display name** | Set the name shown next to your times on the community leaderboard. |
 
-### Lap table
+### Session tab
+
+The default view. Shows the live lap table, telemetry charts, track map, personal bests, and past sessions.
+
+#### Lap table
 
 Each lap row shows:
 
 | Column | Description |
 |---|---|
-| **LAP** | Lap number |
+| **LAP** | Lap number. Click any row to select it for lap comparison (slots A or B). |
 | **TYRE** | Compound pill — `S` Soft (red), `M` Medium (yellow), `H` Hard (white), `I` Inter (green), `W` Wet (blue) |
 | **TIME** | Lap time. `★` = session best. `🏆` = new all-time track PB. |
-| **DELTA** | Gap to track PB (purple `PB!` if this lap set a new record); falls back to session best if no prior PB exists for the track |
-| **S1 / S2 / S3** | Sector split times |
+| **DELTA** | Gap to track PB (purple `PB!` if this lap set a new record); falls back to session best if no prior PB exists |
+| **S1 / S2 / S3** | Sector split times. Best sector each session is highlighted with a purple cell background. |
+
+#### Telemetry charts
+
+Displayed below the lap table. Updated live every 250 ms:
+
+- **Speed trace** — km/h across the lap distance, coloured by sector
+- **Throttle & Brake** — green = throttle, red = brake input (0–100%)
+- **G-Force circle** — lateral vs. longitudinal G, dots coloured by sector; inner ring = 2G reference
+
+Use the track map **← →** buttons to review any previous lap's telemetry. In **comparison mode**, the selected lap (A) is shown in blue/green/red on top of the reference lap (B) in orange/amber.
+
+#### Track map
+
+Live animated car position plotted from motion telemetry. Two display modes:
+
+| Mode | Description |
+|---|---|
+| **S1/S2/S3** | Trace coloured by sector (blue/yellow/red) |
+| **SPEED** | Heatmap from slow (blue) to fast (red) |
+
+Use the **← →** arrows beneath the map to step through previous laps. Click **LIVE** to return to the real-time view.
+
+#### Lap comparison
+
+Click a lap row to assign it to slot **A**, then click another to assign slot **B**. The comparison bar shows both lap numbers and the telemetry panel switches to overlay mode. Click **CLEAR** to exit comparison and return to live view.
+
+#### Personal Bests panel
+
+Lists your all-time best lap for every track and session type you have driven. Records are keyed on track + session type (Monaco Qualifying and Monaco Race are separate). Shows time, tyre compound, and date. Collapsible.
+
+#### Past Sessions panel
+
+All previously recorded sessions with their track, type, weather, and start/end times. Each row has a **CSV** link to download that session's lap data directly. Collapsible.
+
+### Career tab
+
+Click **CAREER** in the tab bar to switch to the career view. Shows a summary across all your race sessions:
+
+| Stat | Description |
+|---|---|
+| **Races** | Total race sessions finished |
+| **Wins** | P1 finishes |
+| **Podiums** | Top 3 finishes |
+| **Points** | Cumulative points scored |
+| **Fast Laps** | Fastest lap awards |
+| **DNFs** | Did Not Finish count |
+
+Below the summary, a full results table lists every race with grid position, finishing position (gold/silver/bronze coloured), points, and best lap. An **FL** badge marks races where you set the fastest lap.
+
+A toast notification appears automatically when a race result is recorded (e.g. *Race finished: P3 · 15 pts*).
 
 ### AI Debrief panel
 
-When Azure OpenAI is configured, an **AI DEBRIEF** button appears in the header. Click it at any point during or after a session to get a written debrief styled like a race engineer briefing. The debrief covers:
+Click **AI DEBRIEF** in the header at any point during or after a session. The debrief covers:
 
 - Overall pace and consistency
 - Sector-by-sector weaknesses
@@ -98,23 +167,13 @@ When Azure OpenAI is configured, an **AI DEBRIEF** button appears in the header.
 - Best lap analysis
 - One actionable recommendation for the next session
 
-The panel appears below the leaderboard and can be dismissed at any time. Generating a debrief takes a few seconds while the model processes your lap data.
-
-### Personal Bests panel
-
-A **Personal Bests** table lists your all-time best lap for every track and session type you have driven. Records are keyed on track + session type, so a Monaco Qualifying PB and a Monaco Race PB are stored separately. The panel shows the time, tyre compound, and the date the record was set.
-
-The **Session** panel also shows the current track's all-time PB for quick reference while driving.
+The debrief is generated via a shared backend — no API key or Azure account needed. Limit is 10 debriefs per player per day. The panel can be dismissed at any time.
 
 ### Community Leaderboard panel
 
-When the leaderboard is configured, a **Community Leaderboard** panel appears showing the top 25 times for the current track and session type. Your own time is highlighted. The panel refreshes automatically when you set a new PB or switch tracks.
+Shown in the sidebar beneath the track map. Displays the top 25 times for the current track and session type. Your own time is highlighted. The panel refreshes automatically when you set a new PB or switch tracks.
 
-Times are only submitted if you explicitly enable the **Leaderboard opt-in** toggle in the header. You can set a display name (defaults to `Anonymous`) that appears next to your times. Your identity is a randomly generated UUID stored locally in `f1_laps.db` — no account or email is required.
-
-### Past Sessions panel
-
-All previously recorded sessions are listed with their track, type, weather, and start/end times. Each row has a **CSV** link to download that session's lap data directly.
+Times are only submitted if you explicitly enable the **SUBMIT PBs** toggle. You can set a display name (defaults to `Anonymous`). Your identity is a randomly generated UUID stored locally in `f1_laps.db` — no account or email is required.
 
 ### CSV format
 
@@ -135,12 +194,14 @@ The app exposes a small REST API you can query directly:
 | `/api/state` | GET | Current live session state as JSON |
 | `/api/sessions` | GET | All past sessions as JSON |
 | `/api/pbs` | GET | All-time personal bests per track as JSON |
+| `/api/career` | GET | Career stats summary and race results history |
 | `/api/export` | GET | Current session laps as CSV download |
 | `/api/sessions/<id>/export` | GET | Past session laps as CSV download |
+| `/api/lap-trace/<sid>/<lap>` | GET | Raw trace data for a specific lap |
 | `/api/clear` | POST | Clear the current session |
-| `/api/ai-config` | GET | Returns `{"enabled": bool}` — whether AI debrief is configured |
+| `/api/ai-config` | GET | Returns `{"enabled": bool}` — whether AI debrief is available |
 | `/api/debrief` | POST | Generate an AI debrief for the current session |
-| `/api/leaderboard` | GET | Proxy to the community leaderboard API (requires `F1_LEADERBOARD_URL`) |
+| `/api/leaderboard` | GET | Proxy to the community leaderboard API |
 | `/api/lb-settings` | POST | Update leaderboard opt-in and display name |
 
 -----
@@ -149,150 +210,39 @@ The app exposes a small REST API you can query directly:
 
 F1 25 broadcasts UDP packets on your local network containing real-time telemetry data. This app runs two threads simultaneously:
 
-- **UDP listener** on port `20777` — parses three packet types:
+- **UDP listener** on port `20777` — parses six packet types:
+  - Packet ID 0 (Motion) — car position (X/Z) and G-forces for the track map and G-force circle
   - Packet ID 1 (Session Data) — track, session type, weather
   - Packet ID 2 (Lap Data) — lap times and sector splits
+  - Packet ID 3 (Event) — fastest lap detection (FTLP event)
+  - Packet ID 6 (Car Telemetry) — speed, throttle, brake, and gear for telemetry charts
   - Packet ID 7 (Car Status) — tyre compound
+  - Packet ID 8 (Final Classification) — race finishing position, points, and result status
 - **HTTP server** on port `5000` — serves the dashboard and API endpoints; the browser polls `/api/state` every second
 
-Each completed lap is written to `f1_laps.db` (SQLite) immediately. If the lap beats the all-time best for that track and session type, the `personal_bests` table is updated at the same time.
+Each completed lap is written to `f1_laps.db` (SQLite) immediately. If the lap beats the all-time best for that track and session type, the `personal_bests` table is updated at the same time. When a Final Classification packet arrives at the end of a race, the result is written to the `race_results` table.
 
 -----
 
-## AI Lap Debrief (optional)
+## AI Lap Debrief
 
-The AI debrief feature uses **Azure OpenAI** to generate a post-session analysis. No data leaves your machine unless you configure this feature.
+The AI debrief feature is built in and works out of the box — no Azure account or API key required. Each player gets 10 debriefs per UTC day via the shared Pitwall IQ backend.
 
-### What you need in Azure
-
-1. An **Azure OpenAI** resource
-2. A **model deployment** (GPT-4o recommended) within that resource
-
-See [Deploying to Azure](#deploying-to-azure) below for step-by-step instructions.
-
-### Configure the tracker
-
-Set these three environment variables before starting the tracker:
-
-**Linux / macOS:**
-```bash
-export AZURE_OPENAI_ENDPOINT="https://<your-resource-name>.openai.azure.com"
-export AZURE_OPENAI_KEY="<your-api-key>"
-export AZURE_OPENAI_DEPLOYMENT="gpt-4o"   # or your deployment name
-python F1_lap_tracker.py
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:AZURE_OPENAI_ENDPOINT = "https://<your-resource-name>.openai.azure.com"
-$env:AZURE_OPENAI_KEY      = "<your-api-key>"
-$env:AZURE_OPENAI_DEPLOYMENT = "gpt-4o"
-python F1_lap_tracker.py
-```
-
-Once set, the **AI DEBRIEF** button will appear in the dashboard header.
-
-### Estimated cost
-
-A single debrief call sends roughly 500–800 tokens and receives ~400 tokens back.
-
-| Model | Cost per debrief (approx) |
-|---|---|
-| GPT-4o | ~$0.005 |
-| GPT-4o mini | ~$0.0003 |
-
-For casual use (a few sessions a week) the monthly cost is a few cents. GPT-4o mini is a perfectly capable choice if you want to minimise cost.
+If you want to host your own backend (unlimited debriefs, your own OpenAI deployment), see [Self-Hosting](#self-hosting) below.
 
 -----
 
-## Community Leaderboard (optional)
+## Community Leaderboard
 
-The community leaderboard is an **opt-in** feature backed by a self-hosted Azure Functions API + Cosmos DB. You must deploy the backend yourself — the tracker will work perfectly without it.
+The community leaderboard is built in and works out of the box — no configuration required. Toggle **SUBMIT PBs** in the header to start sharing your times. Your PBs are only submitted when you explicitly opt in.
 
-### Architecture
-
-```
-F1 25 UDP → F1_lap_tracker.py → f1_laps.db (local)
-                              ↓ (on new PB, if opted in)
-                   Azure Functions (leaderboard_api/)
-                              ↓
-                   Azure Cosmos DB (NoSQL, serverless)
-                              ↑
-              /api/leaderboard proxy (browser → localhost)
-```
-
-### Deploy the backend
-
-**Linux / macOS** — requires Azure CLI, Azure Functions Core Tools, and `jq`:
-
-```bash
-cd infra
-chmod +x deploy.sh
-./deploy.sh <resource-group-name> <azure-region>
-# e.g.: ./deploy.sh pitwall-iq-rg eastus
-```
-
-**Windows** — use WSL (Windows Subsystem for Linux) or Git Bash, then run the same commands above. Install `jq` first:
-
-```powershell
-# In PowerShell (one-time setup)
-winget install jqlang.jq
-winget install Microsoft.AzureCLI
-npm install -g azure-functions-core-tools@4
-```
-
-Then open **Git Bash** or **WSL** and run:
-
-```bash
-cd infra
-./deploy.sh pitwall-iq-rg eastus
-```
-
-The script will:
-1. Create the resource group
-2. Deploy Cosmos DB, Function App, and Storage Account via Bicep
-3. Publish the Python Azure Function
-4. Print the two environment variables you need
-
-### Configure the tracker
-
-**Linux / macOS:**
-```bash
-export F1_LEADERBOARD_URL="https://<your-func>.azurewebsites.net"
-export F1_LEADERBOARD_KEY="<your-function-key>"
-python F1_lap_tracker.py
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:F1_LEADERBOARD_URL = "https://<your-func>.azurewebsites.net"
-$env:F1_LEADERBOARD_KEY = "<your-function-key>"
-python F1_lap_tracker.py
-```
-
-Once set:
-1. Open the dashboard at `http://localhost:5000`
-2. Enter a display name in the header (optional, defaults to `Anonymous`)
-3. Toggle **Leaderboard opt-in** to start sharing your PBs
-
-### Who needs to deploy
-
-Only **one person** in your group needs to run the deploy. Everyone else just sets the same `F1_LEADERBOARD_URL` and `F1_LEADERBOARD_KEY` values the host shares with them — no Azure account required for participants.
-
-### Estimated Azure cost
-
-| Resource | Estimated monthly cost |
-|---|---|
-| Cosmos DB (serverless) | ~$0–$1 for light use |
-| App Service Plan (B1 Basic) | ~$13/month |
-| Storage Account | < $0.10 |
-| **Total** | **~$13–$14/month** |
-
-> The Bicep uses a **Basic B1** dedicated plan rather than the consumption (Y1/Dynamic) tier. Many personal/trial Azure subscriptions have a Dynamic VM quota of 0, which blocks the consumption plan. B1 avoids that restriction entirely.
+If you want to host a private leaderboard for your own group, see [Self-Hosting](#self-hosting) below.
 
 -----
 
-## Deploying to Azure
+## Self-Hosting
+
+This section is for advanced users who want to run their own backend (private leaderboard, unlimited AI debriefs, full data control).
 
 ### Prerequisites
 
@@ -322,87 +272,59 @@ npm install -g azure-functions-core-tools@4
 az login
 ```
 
-> The deploy script (`infra/deploy.sh`) is a bash script. On Windows, run it from **Git Bash** or **WSL** after installing the tools above.
+> The deploy script (`infra/deploy.sh`) is a bash script. On Windows, run it from **Git Bash** or **WSL**.
 
----
-
-### Option A — AI Debrief only (Azure OpenAI)
-
-This is the simpler option. No infrastructure files needed — just two Azure portal clicks.
-
-**Step 1: Create an Azure OpenAI resource**
-
-1. Go to the [Azure Portal](https://portal.azure.com) → **Create a resource** → search **Azure OpenAI**
-2. Fill in:
-   - **Subscription**: your subscription
-   - **Resource group**: create new, e.g. `pitwall-iq-rg`
-   - **Region**: pick one that has GPT-4o availability (e.g. `East US`, `Sweden Central`)
-   - **Name**: e.g. `pitwall-iq-openai`
-   - **Pricing tier**: Standard S0
-3. Click **Review + Create** → **Create**
-
-> Azure OpenAI requires capacity approval in some regions. East US and Sweden Central typically have GPT-4o available immediately.
-
-**Step 2: Deploy a model**
-
-1. Once the resource is created, open it and click **Go to Azure OpenAI Studio** (or navigate to `https://oai.azure.com`)
-2. Click **Deployments** → **+ Deploy model**
-3. Select **gpt-4o** (or **gpt-4o-mini** for lower cost)
-4. Set a **Deployment name** — this is your `AZURE_OPENAI_DEPLOYMENT` value (e.g. `gpt-4o`)
-5. Click **Deploy**
-
-**Step 3: Get your credentials**
-
-Back in the Azure Portal, open your OpenAI resource:
-- **Endpoint**: shown on the Overview page — copy the URL (e.g. `https://pitwall-iq-openai.openai.azure.com`)
-- **API Key**: go to **Keys and Endpoint** → copy **KEY 1**
-
-**Step 4: Set the environment variables**
-
-Linux / macOS:
-```bash
-export AZURE_OPENAI_ENDPOINT="https://pitwall-iq-openai.openai.azure.com"
-export AZURE_OPENAI_KEY="<KEY 1 from portal>"
-export AZURE_OPENAI_DEPLOYMENT="gpt-4o"
-python F1_lap_tracker.py
-```
-
-Windows (PowerShell):
-```powershell
-$env:AZURE_OPENAI_ENDPOINT  = "https://pitwall-iq-openai.openai.azure.com"
-$env:AZURE_OPENAI_KEY       = "<KEY 1 from portal>"
-$env:AZURE_OPENAI_DEPLOYMENT = "gpt-4o"
-python F1_lap_tracker.py
-```
-
-The **AI DEBRIEF** button will now appear in the dashboard.
-
----
-
-### Option B — Community Leaderboard (Azure Functions + Cosmos DB)
-
-Run the automated deploy script included in this repo. On **Linux/macOS**:
+### Deploy the backend
 
 ```bash
 cd infra
 chmod +x deploy.sh
-./deploy.sh pitwall-iq-rg eastus
+./deploy.sh <resource-group-name> <azure-region>
+# e.g.: ./deploy.sh pitwall-iq-rg eastus
 ```
 
-On **Windows**, open **Git Bash** or **WSL** (after installing prerequisites above):
+The script will:
+1. Create the resource group
+2. Deploy Cosmos DB, Function App, and Storage Account via Bicep
+3. Publish the Python Azure Function
+4. Print the environment variables you need
 
+### Point the tracker at your backend
+
+Set these environment variables before starting the tracker (or add them to a `.env` file in the app folder):
+
+**Linux / macOS:**
 ```bash
-cd infra
-./deploy.sh pitwall-iq-rg eastus
+export F1_LEADERBOARD_URL="https://<your-func>.azurewebsites.net"
+export AZURE_OPENAI_ENDPOINT="https://<your-resource>.openai.azure.com"
+export AZURE_OPENAI_KEY="<your-api-key>"
+export AZURE_OPENAI_DEPLOYMENT="gpt-4o"
+python3 F1_lap_tracker.py
 ```
 
-This deploys everything via Bicep (Cosmos DB, Function App, Storage Account) and prints the two env vars you need. Share those with friends and everyone can see the same leaderboard.
+**Windows (PowerShell):**
+```powershell
+$env:F1_LEADERBOARD_URL      = "https://<your-func>.azurewebsites.net"
+$env:AZURE_OPENAI_ENDPOINT   = "https://<your-resource>.openai.azure.com"
+$env:AZURE_OPENAI_KEY        = "<your-api-key>"
+$env:AZURE_OPENAI_DEPLOYMENT = "gpt-4o"
+python F1_lap_tracker.py
+```
 
----
+### Sharing with friends
 
-### Option C — Both AI Debrief and Community Leaderboard
+Only one person needs to deploy. Everyone else sets the same `F1_LEADERBOARD_URL` value — no Azure account required for participants.
 
-Deploy Option B first (which creates a resource group), then create the Azure OpenAI resource in the same resource group via the portal (Option A, Step 1 — choose the existing resource group). Set all five environment variables before starting the tracker.
+### Estimated Azure cost
+
+| Resource | Estimated monthly cost |
+|---|---|
+| Cosmos DB (serverless) | ~$0–$1 for light use |
+| App Service Plan (B1 Basic) | ~$13/month |
+| Storage Account | < $0.10 |
+| **Total** | **~$13–$14/month** |
+
+> The Bicep uses a **Basic B1** dedicated plan rather than the consumption (Y1/Dynamic) tier. Many personal/trial Azure subscriptions have a Dynamic VM quota of 0, which blocks the consumption plan. B1 avoids that restriction entirely.
 
 -----
 
@@ -416,23 +338,25 @@ Deploy Option B first (which creates a resource group), then create the Azure Op
 
 **AI Debrief button doesn't appear**
 
-- Check that `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_KEY` are set in the same terminal you started the tracker from
-- The endpoint must start with `https://` and end with `.openai.azure.com`
-- Confirm your model deployment name matches `AZURE_OPENAI_DEPLOYMENT` exactly (case-sensitive)
+- The button shows only when at least one lap has been recorded in the current session
+- If it still doesn't appear, check the browser console for errors — the `/api/ai-config` endpoint should return `{"enabled": true}`
 
 **AI Debrief returns an error**
 
-- `AuthenticationError` — API key is wrong or expired; regenerate it in the portal under **Keys and Endpoint**
-- `DeploymentNotFound` — your `AZURE_OPENAI_DEPLOYMENT` name doesn't match what's in Azure OpenAI Studio
-- `RateLimitError` — you've hit the model's token-per-minute quota; wait a moment and try again
+- `429 Too Many Requests` — you've used all 10 debriefs for today; resets at midnight UTC
+- Other errors — check your internet connection; the shared backend requires outbound HTTPS access
 
 **Track name shows "Track [number]" or sector times look wrong**
 
-- Codemasters occasionally adjusts packet offsets between game releases. Try switching the in-game UDP Format between 2023 and 2024 if both options are available.
+- Codemasters occasionally adjusts packet offsets between game releases. Try switching the in-game UDP Format to 2023 or 2024 if 2025 gives incorrect data.
 
 **Port already in use**
 
 - Another app (SimHub, Crew Chief, etc.) may already be listening on port `20777`. Close it, or configure F1 25 to send to a different port and update the `bind` call in the script accordingly.
+
+**macOS says "launch_mac.command cannot be opened"**
+
+- Right-click the file in Finder and choose **Open**, then confirm in the dialog. You only need to do this once.
 
 -----
 
@@ -440,4 +364,4 @@ Deploy Option B first (which creates a resource group), then create the Azure Op
 
 - This app is built for **F1 25** but is compatible with F1 2023 and F1 2024 using the same UDP format.
 - Console versions (PlayStation, Xbox) can also broadcast telemetry to a PC on the same network — set the UDP IP to your PC's local IP instead of `127.0.0.1` and ensure both devices are on the same network.
-- No data is sent externally unless you configure the optional Azure features. The tracker works fully offline without them.
+- No lap or session data is sent externally unless you enable the leaderboard opt-in toggle. The AI debrief sends only session metadata and lap times (no personal information) to the shared backend.
