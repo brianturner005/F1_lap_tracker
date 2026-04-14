@@ -1,3 +1,5 @@
+import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -7,7 +9,6 @@ from datetime import datetime, timezone
 import azure.functions as func
 from azure.cosmos import CosmosClient, PartitionKey
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
-import hashlib
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -85,16 +86,24 @@ def _handle_submit(body) -> func.HttpResponse:
     compound: str = str(body.get("compound", "")).strip()
     submitted_at: str = str(body["submitted_at"]).strip()
 
+    _VALID_COMPOUNDS = {"Soft", "Medium", "Hard", "Inter", "Wet", ""}
+
     if not player_id:
         return _error("player_id must not be empty.")
     if not display_name or len(display_name) > 32:
         return _error("display_name must be between 1 and 32 characters.")
-    if not track:
-        return _error("track must not be empty.")
-    if not session_type:
-        return _error("session_type must not be empty.")
+    if not all(c.isprintable() for c in display_name):
+        return _error("display_name contains invalid characters.")
+    if not track or len(track) > 60:
+        return _error("track must be between 1 and 60 characters.")
+    if not session_type or len(session_type) > 30:
+        return _error("session_type must be between 1 and 30 characters.")
     if not isinstance(lap_time_ms, int) or not (30_000 <= lap_time_ms <= 600_000):
         return _error("lap_time_ms must be an integer between 30000 and 600000.")
+    if len(lap_time) > 20:
+        return _error("lap_time string too long.")
+    if compound not in _VALID_COMPOUNDS:
+        return _error("Invalid compound value.")
 
     doc_id = f"{player_id}_{track}_{session_type}".replace(" ", "_")
     partition_key_value = f"{track}|{session_type}"
@@ -295,7 +304,12 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
 
     # ── IP-based rate limit — prevents bypass via new UUIDs ──────────────────
     x_forwarded = req.headers.get("X-Forwarded-For", "")
-    client_ip = x_forwarded.split(",")[0].strip() if x_forwarded else req.headers.get("X-Client-IP", "unknown")
+    raw_ip = x_forwarded.split(",")[0].strip() if x_forwarded else req.headers.get("X-Client-IP", "unknown")
+    try:
+        ipaddress.ip_address(raw_ip)
+        client_ip = raw_ip
+    except ValueError:
+        client_ip = "invalid"
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
     ip_pk = f"ip:{ip_hash}"
     ip_usage_id = f"ip_{ip_hash}_{today}"
@@ -313,6 +327,8 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
     laps = body.get("laps", [])
     if not laps:
         return _error("No laps provided.", 400)
+    if not isinstance(laps, list) or len(laps) > 200:
+        return _error("laps must be an array of at most 200 entries.", 400)
 
     session       = body.get("session", {})
     best_lap_ms   = body.get("best_lap_ms")
@@ -320,9 +336,13 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
     track_pb_cmp  = body.get("track_pb_compound")
 
     # ── Build prompt ──────────────────────────────────────────────────────────
-    track     = session.get("track", "Unknown")
-    sess_type = session.get("session_type", "Unknown")
-    weather   = session.get("weather", "Unknown")
+    def _clean(s: str, max_len: int = 60) -> str:
+        """Strip newlines and control characters to prevent prompt injection."""
+        return str(s).replace("\n", " ").replace("\r", " ").strip()[:max_len]
+
+    track     = _clean(session.get("track", "Unknown"))
+    sess_type = _clean(session.get("session_type", "Unknown"))
+    weather   = _clean(session.get("weather", "Unknown"))
     best_time = _ms_to_laptime(best_lap_ms)
     pb_time   = _ms_to_laptime(track_pb_ms) if track_pb_ms else "No record"
     pb_suffix = f" ({track_pb_cmp})" if track_pb_cmp else ""
@@ -379,7 +399,7 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
         text = result["choices"][0]["message"]["content"].strip()
     except Exception as exc:
         logger.error("Azure OpenAI error: %s", exc)
-        return _error(f"AI service error: {str(exc)}", 502)
+        return _error("AI service temporarily unavailable. Please try again.", 502)
 
     # ── Increment usage counters (TTL 90 000 s ≈ 25 h, auto-expires) ─────────
     usage_container.upsert_item({

@@ -1632,7 +1632,7 @@ async function requestDebrief() {
   } catch(e) {
     section.innerHTML = `<div class="panel debrief-panel">
       <div class="panel-title">AI Debrief — Race Engineer</div>
-      <div style="color:var(--red);font-size:.8rem">Error: ${e.message}</div>
+      <div style="color:var(--red);font-size:.8rem">Error: ${esc(e.message)}</div>
     </div>`;
   } finally {
     btn.textContent = 'AI DEBRIEF';
@@ -1643,7 +1643,10 @@ async function requestDebrief() {
 function renderDebrief(data) {
   const section = document.getElementById('debrief-section');
   const paras = data.debrief.split(/\n\n+/).filter(p => p.trim());
-  const html = paras.map(p => `<p class="debrief-para">${p.replace(/\n/g,'<br>')}</p>`).join('');
+  const html = paras.map(p => {
+    const lines = p.split('\n').map(l => esc(l)).join('<br>');
+    return `<p class="debrief-para">${lines}</p>`;
+  }).join('');
   const remainingNote = data.remaining != null
     ? `<span style="color:var(--muted);font-size:.65rem">${data.remaining} debrief${data.remaining !== 1 ? 's' : ''} remaining today</span>`
     : '';
@@ -1939,9 +1942,9 @@ function render(d) {
     : `<div class="info-row"><span class="info-key">TRACK PB</span><span class="info-val" style="color:var(--muted)">No record yet</span></div>`;
   const p3 = `<div class="panel">
     <div class="panel-title">Session</div>
-    <div class="info-row"><span class="info-key">TRACK</span><span class="info-val">${d.session.track}</span></div>
-    <div class="info-row"><span class="info-key">TYPE</span><span class="info-val">${d.session.session_type}</span></div>
-    <div class="info-row"><span class="info-key">WEATHER</span><span class="info-val">${d.session.weather}</span></div>
+    <div class="info-row"><span class="info-key">TRACK</span><span class="info-val">${esc(d.session.track)}</span></div>
+    <div class="info-row"><span class="info-key">TYPE</span><span class="info-val">${esc(d.session.session_type)}</span></div>
+    <div class="info-row"><span class="info-key">WEATHER</span><span class="info-val">${esc(d.session.weather)}</span></div>
     <div class="info-row"><span class="info-key">POSITION</span><span class="info-val">${d.player_position > 0 ? 'P' + d.player_position : '—'}</span></div>
     ${pbRow}
   </div>`;
@@ -2699,6 +2702,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.send_header("Content-Length", len(body))
+            self.send_header("X-Frame-Options", "SAMEORIGIN")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(body)
 
