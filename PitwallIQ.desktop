@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Pitwall IQ
+Comment=F1 Lap Time Tracker
+Exec=bash -c 'cd INSTALL_PATH && ./launch_linux.sh'
+Icon=INSTALL_PATH/assets/icon.png
+Terminal=true
+Type=Application
+Categories=Game;Sports;
