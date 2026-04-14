@@ -1442,10 +1442,78 @@ transition: border-color .2s, color .2s;
       <div id="sessions-section"></div>
     </div>
     <div id="debrief-section"></div>
+    </div><!-- end tab-session -->
+    <div id="tab-career" style="display:none">
+      <div id="career-section"></div>
+    </div>
   </div>
 </div>
 
 <script>
+// ── Tab system ────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.getElementById('tab-session').style.display = name === 'session' ? '' : 'none';
+  document.getElementById('tab-career').style.display  = name === 'career'  ? '' : 'none';
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('active', t.id === `tab-btn-${name}`)
+  );
+  if (name === 'career') loadCareer();
+}
+
+// ── Career stats ──────────────────────────────────────────────────────────────
+const RACE_STATUS = {0:'Invalid',1:'Inactive',2:'Active',3:'Finished',4:'DNF',5:'DSQ',6:'N/C',7:'Retired'};
+let _lastRaceResultTs = null;
+
+async function loadCareer() {
+  try {
+    const r = await fetch('/api/career');
+    const d = await r.json();
+    renderCareer(d);
+  } catch(e) {}
+}
+
+function renderCareer(d) {
+  const { stats, recent } = d;
+  const winPct = stats.races > 0 ? ((stats.wins / stats.races) * 100).toFixed(0) : 0;
+  const rows = recent.map(r => {
+    const pos = r.result_status === 3 ? r.position : null;
+    const finishTxt = pos ? `P${pos}` : (RACE_STATUS[r.result_status] || '?');
+    const finishCls = pos === 1 ? ' finish-gold' : pos === 2 ? ' finish-silver' : pos === 3 ? ' finish-bronze' : '';
+    const fl = r.fastest_lap ? '<span class="fl-badge">FL</span>' : '';
+    return `<tr>
+      <td>${esc(r.track)}</td>
+      <td style="color:var(--muted);font-size:.7rem">${esc(r.session_type)}</td>
+      <td class="num">${r.grid_pos || '—'}</td>
+      <td class="num${finishCls}">${finishTxt}</td>
+      <td class="num">${r.points}</td>
+      <td style="font-size:.7rem">${fl}${esc(r.best_lap || '—')}</td>
+    </tr>`;
+  }).join('');
+  const section = document.getElementById('career-section');
+  if (!section) return;
+  section.innerHTML = `
+    <div class="panel">
+      <div class="panel-title">CAREER STATS</div>
+      <div class="career-summary">
+        <div class="stat-box"><div class="stat-val">${stats.races}</div><div class="stat-lbl">RACES</div></div>
+        <div class="stat-box"><div class="stat-val">${stats.wins}</div><div class="stat-lbl">WINS</div></div>
+        <div class="stat-box"><div class="stat-val">${stats.podiums}</div><div class="stat-lbl">PODIUMS</div></div>
+        <div class="stat-box"><div class="stat-val">${stats.points}</div><div class="stat-lbl">POINTS</div></div>
+        <div class="stat-box"><div class="stat-val">${stats.fastest_laps}</div><div class="stat-lbl">FAST LAPS</div></div>
+        <div class="stat-box"><div class="stat-val">${stats.dnfs}</div><div class="stat-lbl">DNFs</div></div>
+      </div>
+      ${recent.length ? `
+        <div class="lap-table-wrap" style="margin-top:14px">
+          <table class="lap-table">
+            <thead><tr>
+              <th>TRACK</th><th>TYPE</th><th>GRID</th><th>FINISH</th><th>PTS</th><th>BEST LAP</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>` : '<p style="color:var(--muted);margin-top:12px;font-size:.8rem">No race results yet — finish a race session to start tracking your career.</p>'}
+    </div>`;
+}
+
 // ── Community leaderboard ─────────────────────────────────────────────────────
 let _lbOptIn = false;
 
@@ -1875,6 +1943,17 @@ function render(d) {
 
   // Lap table
   _checkToasts(d.laps);
+
+  // Toast: race result (fires once when Final Classification packet arrives)
+  if (d.race_result && d.race_result.recorded_at !== _lastRaceResultTs) {
+    _lastRaceResultTs = d.race_result.recorded_at;
+    const rr = d.race_result;
+    const status = RACE_STATUS[rr.result_status] || '?';
+    const msg = rr.result_status === 3
+      ? `Race finished: P${rr.position} · ${rr.points} pts${rr.fastest_lap ? ' · Fastest Lap!' : ''}`
+      : `Race ended: ${status}`;
+    showToast(msg, rr.position === 1 ? 'pb' : 'info', 6000);
+  }
 
   // Find best sector times across valid laps (for mini-best highlighting)
   const validLaps = d.laps.filter(l => !l.invalid);
@@ -2450,6 +2529,17 @@ class Handler(BaseHTTPRequestHandler):
                 out = dict(state)
                 out["track_svg"] = TRACK_SVG.get(track_name)
                 payload = json.dumps(out).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(payload))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        elif parsed.path == "/api/career":
+            recent = db_get_recent_races()
+            with state_lock:
+                stats = dict(state["career_stats"])
+            payload = json.dumps({"stats": stats, "recent": recent}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", len(payload))
