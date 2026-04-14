@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import azure.functions as func
 from azure.cosmos import CosmosClient, PartitionKey
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
+import hashlib
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -25,6 +26,7 @@ DB_NAME = "f1tracker"
 LEADERBOARD_CONTAINER = "leaderboard"
 DEBRIEF_USAGE_CONTAINER = "debrief_usage"
 DAILY_DEBRIEF_LIMIT = 10
+DAILY_IP_DEBRIEF_LIMIT = 20   # higher limit per IP to allow shared networks
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +293,22 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
             429,
         )
 
+    # ── IP-based rate limit — prevents bypass via new UUIDs ──────────────────
+    x_forwarded = req.headers.get("X-Forwarded-For", "")
+    client_ip = x_forwarded.split(",")[0].strip() if x_forwarded else req.headers.get("X-Client-IP", "unknown")
+    ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
+    ip_pk = f"ip:{ip_hash}"
+    ip_usage_id = f"ip_{ip_hash}_{today}"
+
+    try:
+        ip_doc = usage_container.read_item(item=ip_usage_id, partition_key=ip_pk)
+        ip_count = int(ip_doc.get("count", 0))
+    except CosmosResourceNotFoundError:
+        ip_count = 0
+
+    if ip_count >= DAILY_IP_DEBRIEF_LIMIT:
+        return _error("Too many debrief requests from this network today. Resets at midnight UTC.", 429)
+
     # ── Validate lap data ─────────────────────────────────────────────────────
     laps = body.get("laps", [])
     if not laps:
@@ -363,11 +381,18 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Azure OpenAI error: %s", exc)
         return _error(f"AI service error: {str(exc)}", 502)
 
-    # ── Increment usage counter (TTL 90 000 s ≈ 25 h, auto-expires) ──────────
+    # ── Increment usage counters (TTL 90 000 s ≈ 25 h, auto-expires) ─────────
     usage_container.upsert_item({
         "id": usage_id,
         "player_id": player_id,
         "count": count + 1,
+        "date": today,
+        "ttl": 90000,
+    })
+    usage_container.upsert_item({
+        "id": ip_usage_id,
+        "player_id": ip_pk,
+        "count": ip_count + 1,
         "date": today,
         "ttl": 90000,
     })

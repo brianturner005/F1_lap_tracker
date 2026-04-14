@@ -90,6 +90,9 @@ state = {
     "current_sector": 0,               # 0=S1, 1=S2, 2=S3
     "lap_trace": [],                   # [{x,z,speed,throttle,brake,gear,gLat,gLon,sector}] current lap
     "track_outline": [],               # reference trace from last completed lap
+    "career_stats": {"races":0,"wins":0,"podiums":0,"points":0,"fastest_laps":0,"dnfs":0},
+    "race_result": None,               # populated when Final Classification packet (ID 8) arrives
+    "player_fastest_lap": False,       # set True when FTLP event fires for the player
 }
 
 TRACK_IDS = {
@@ -149,6 +152,9 @@ WEATHER_IDS = {0:"Clear", 1:"Light Cloud", 2:"Overcast", 3:"Light Rain",
 
 VISUAL_COMPOUNDS = {7:"Inter", 8:"Wet", 16:"Soft", 17:"Medium", 18:"Hard"}
 
+FINAL_CLASS_SIZE = 45   # bytes per car in PacketFinalClassificationData
+RESULT_STATUS    = {0:"Invalid",1:"Inactive",2:"Active",3:"Finished",4:"DNF",5:"DSQ",6:"N/C",7:"Retired"}
+
 # ── SQLite persistence ────────────────────────────────────────────────────────
 
 DB_PATH = "f1_laps.db"
@@ -197,6 +203,24 @@ def init_db():
             set_at       TEXT,
             session_id   INTEGER,
             PRIMARY KEY (track, session_type)
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS race_results (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id    INTEGER,
+            track         TEXT,
+            session_type  TEXT,
+            position      INTEGER,
+            grid_pos      INTEGER,
+            points        INTEGER,
+            num_laps      INTEGER,
+            result_status INTEGER,
+            best_lap_ms   INTEGER,
+            best_lap      TEXT,
+            total_time_s  REAL,
+            fastest_lap   INTEGER DEFAULT 0,
+            recorded_at   TEXT
         )
     """)
     # Migrations for existing databases
@@ -280,6 +304,49 @@ def db_get_all_pbs():
     con.row_factory = sqlite3.Row
     rows = con.execute(
         "SELECT * FROM personal_bests ORDER BY track, session_type"
+    ).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+def db_save_race_result(session_id, track, session_type, position, grid_pos,
+                        points, num_laps, result_status, best_lap_ms, best_lap,
+                        total_time_s, fastest_lap):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        """INSERT INTO race_results
+           (session_id, track, session_type, position, grid_pos, points, num_laps,
+            result_status, best_lap_ms, best_lap, total_time_s, fastest_lap, recorded_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (session_id, track, session_type, position, grid_pos, points, num_laps,
+         result_status, best_lap_ms, best_lap, total_time_s, int(fastest_lap),
+         datetime.now().isoformat()),
+    )
+    con.commit()
+    con.close()
+
+def db_get_career_stats():
+    con = sqlite3.connect(DB_PATH)
+    row = con.execute("""
+        SELECT
+            COUNT(*)                                                      AS races,
+            SUM(CASE WHEN position = 1 AND result_status = 3 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN position <= 3 AND result_status = 3 THEN 1 ELSE 0 END) AS podiums,
+            SUM(points)                                                   AS points,
+            SUM(fastest_lap)                                              AS fastest_laps,
+            SUM(CASE WHEN result_status IN (4,7) THEN 1 ELSE 0 END)      AS dnfs
+        FROM race_results
+    """).fetchone()
+    con.close()
+    if row:
+        return {"races": row[0] or 0, "wins": row[1] or 0, "podiums": row[2] or 0,
+                "points": row[3] or 0, "fastest_laps": row[4] or 0, "dnfs": row[5] or 0}
+    return {"races": 0, "wins": 0, "podiums": 0, "points": 0, "fastest_laps": 0, "dnfs": 0}
+
+def db_get_recent_races(limit=30):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM race_results ORDER BY id DESC LIMIT ?", (limit,)
     ).fetchall()
     con.close()
     return [dict(r) for r in rows]
@@ -659,6 +726,69 @@ def parse_car_status_packet(data, player_idx):
     except Exception:
         pass
 
+# Packet ID 3 – Event Data
+def parse_event_packet(data, player_idx):
+    try:
+        base = HEADER_SIZE
+        if len(data) < base + 4:
+            return
+        code = data[base:base + 4].decode("ascii", errors="ignore")
+        if code == "FTLP" and len(data) >= base + 5:
+            vehicle_idx = struct.unpack_from("<B", data, base + 4)[0]
+            if vehicle_idx == player_idx:
+                with state_lock:
+                    state["player_fastest_lap"] = True
+    except Exception:
+        pass
+
+# Packet ID 8 – Final Classification Data
+def parse_final_classification_packet(data, player_idx):
+    try:
+        base = HEADER_SIZE
+        if len(data) < base + 1:
+            return
+        num_cars = struct.unpack_from("<B", data, base)[0]
+        if player_idx >= num_cars:
+            return
+        car_base = base + 1 + player_idx * FINAL_CLASS_SIZE
+        if len(data) < car_base + 20:
+            return
+        position      = struct.unpack_from("<B", data, car_base + 0)[0]
+        num_laps      = struct.unpack_from("<B", data, car_base + 1)[0]
+        grid_pos      = struct.unpack_from("<B", data, car_base + 2)[0]
+        points        = struct.unpack_from("<B", data, car_base + 3)[0]
+        result_status = struct.unpack_from("<B", data, car_base + 5)[0]
+        best_lap_ms   = struct.unpack_from("<I", data, car_base + 6)[0]
+        total_time_s  = struct.unpack_from("<d", data, car_base + 10)[0]
+        best_lap_str  = ms_to_laptime(best_lap_ms) if best_lap_ms > 0 else "—"
+        with state_lock:
+            fastest  = state["player_fastest_lap"]
+            state["player_fastest_lap"] = False
+            sid      = state["current_session_id"]
+            track    = state["session"]["track"]
+            sess_type = state["session"]["session_type"]
+            state["race_result"] = {
+                "position": position,
+                "grid_pos": grid_pos,
+                "points": points,
+                "num_laps": num_laps,
+                "result_status": result_status,
+                "best_lap_ms": best_lap_ms,
+                "best_lap": best_lap_str,
+                "total_time_s": round(total_time_s, 3),
+                "fastest_lap": fastest,
+                "track": track,
+                "session_type": sess_type,
+            }
+        db_save_race_result(sid, track, sess_type, position, grid_pos, points,
+                            num_laps, result_status, best_lap_ms, best_lap_str,
+                            total_time_s, fastest)
+        stats = db_get_career_stats()
+        with state_lock:
+            state["career_stats"] = stats
+    except Exception:
+        pass
+
 # ── Community leaderboard ─────────────────────────────────────────────────────
 
 def _lb_post(payload):
@@ -762,6 +892,10 @@ def udp_listener():
                 parse_car_status_packet(data, pidx)
             elif pid == 0:
                 parse_motion_packet(data, pidx)
+            elif pid == 3:
+                parse_event_packet(data, pidx)
+            elif pid == 8:
+                parse_final_classification_packet(data, pidx)
         except socket.timeout:
             pass
         except Exception:
@@ -1103,6 +1237,20 @@ transition: border-color .2s;
 
 /* Sector mini-best highlight */
 td.sector.s-best { background: rgba(167,139,250,.18); color: var(--purple) !important; font-weight: 700; border-radius: 3px; }
+/* Tabs */
+.tab-bar { display:flex; gap:0; margin-bottom:12px; border-bottom:1px solid var(--border); }
+.tab { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); font-family:'Orbitron',sans-serif; font-size:.7rem; letter-spacing:.1em; padding:9px 20px; cursor:pointer; margin-bottom:-1px; transition:color .15s; }
+.tab.active { color:var(--red); border-bottom-color:var(--red); }
+.tab:hover:not(.active) { color:var(--text); }
+/* Career panel */
+.career-summary { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.stat-box { flex:1; min-width:72px; background:rgba(255,255,255,.04); border-radius:4px; padding:10px 8px; text-align:center; }
+.stat-val { font-family:'Orbitron',sans-serif; font-size:1.3rem; font-weight:700; color:var(--text); }
+.stat-lbl { font-size:.6rem; color:var(--muted); letter-spacing:.1em; margin-top:3px; }
+.fl-badge { background:var(--purple); color:#fff; font-size:.6rem; padding:1px 5px; border-radius:2px; margin-right:4px; font-weight:700; vertical-align:middle; }
+td.finish-gold { color:#ffd700; font-weight:700; }
+td.finish-silver { color:#c0c0c0; font-weight:700; }
+td.finish-bronze { color:#cd7f32; font-weight:700; }
 
 /* Toast notifications */
 #toast-container { position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
@@ -1260,6 +1408,11 @@ transition: border-color .2s, color .2s;
     <div id="lb-section"></div>
   </aside>
   <div class="main-col">
+    <div class="tab-bar">
+      <button class="tab active" id="tab-btn-session" onclick="switchTab('session')">SESSION</button>
+      <button class="tab" id="tab-btn-career" onclick="switchTab('career')">CAREER</button>
+    </div>
+    <div id="tab-session">
     <div id="comp-bar">
       <span class="comp-tag-a" id="comp-label-a">A: —</span>
       <span style="color:var(--muted)">vs</span>
@@ -2544,8 +2697,10 @@ def main():
     print()
 
     cfg = init_config()
+    career = db_get_career_stats()
     with state_lock:
         state["player_id"]         = cfg["player_id"]
+        state["career_stats"]      = career
         state["leaderboard_opt_in"] = cfg["leaderboard_opt_in"]
         state["display_name"]      = cfg["display_name"]
         state["leaderboard_enabled"] = bool(LEADERBOARD_URL)
