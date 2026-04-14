@@ -468,19 +468,34 @@
     <p class="section-intro">All the data the game generates, presented in a clean browser dashboard — on any device on your local network.</p>
     <div class="features-grid">
       <div class="card">
+        <div class="card-icon">&#128506;</div>
+        <h3>Live track map</h3>
+        <p>Animated car position plotted in real time. Toggle between sector colouring or a speed heatmap. Step through any previous lap with the arrow navigation.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128200;</div>
+        <h3>Live telemetry charts</h3>
+        <p>Speed trace, throttle &amp; brake inputs, and a G-force circle updated every 250 ms. Overlay two laps to compare them side-by-side.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#9878;</div>
+        <h3>Lap comparison</h3>
+        <p>Click any two laps to overlay their speed, inputs, and G-force traces. Spot exactly where time is gained or lost corner by corner.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128081;</div>
+        <h3>Career stats</h3>
+        <p>Tracks race results across every session — wins, podiums, points total, DNFs, grid vs finish positions, and fastest lap awards.</p>
+      </div>
+      <div class="card">
         <div class="card-icon">&#9654;</div>
         <h3>Auto-capture</h3>
-        <p>Lap times are recorded the instant you cross the finish line. No button presses, no setup per session.</p>
+        <p>Lap times recorded the instant you cross the finish line — including the final lap. No button presses, no setup per session.</p>
       </div>
       <div class="card">
         <div class="card-icon">&#9201;</div>
         <h3>Sector splits</h3>
-        <p>S1, S2, and S3 times per lap so you can pinpoint exactly where you're losing time.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">&#9733;</div>
-        <h3>Best lap tracking</h3>
-        <p>Personal best is highlighted in gold. Every other lap shows a delta so the gap is always visible at a glance.</p>
+        <p>S1, S2, and S3 times per lap. Best sector each session highlighted in purple so weak points are immediately obvious.</p>
       </div>
       <div class="card">
         <div class="card-icon">&#128663;</div>
@@ -488,29 +503,29 @@
         <p>Soft, Medium, Hard, Inter, and Wet — each lap records the compound with colour-coded pills in the table.</p>
       </div>
       <div class="card">
+        <div class="card-icon">&#9733;</div>
+        <h3>Personal bests</h3>
+        <p>Session best highlighted in gold. All-time track PBs stored per track and session type — Monaco Qualifying and Monaco Race kept separately.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#127937;</div>
+        <h3>Team themes</h3>
+        <p>Choose a colour theme for all 10 F1 2025 constructors from a dropdown in the header. Preference is saved in the browser.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128276;</div>
+        <h3>Toast notifications</h3>
+        <p>Instant pop-up alerts when you set a new track PB or beat your best sector time.</p>
+      </div>
+      <div class="card">
         <div class="card-icon">&#128190;</div>
         <h3>Persistent storage</h3>
-        <p>Every session and lap is automatically saved to a local SQLite database. Data survives restarts.</p>
+        <p>Every session and lap saved automatically to a local SQLite database. Data survives restarts. Export any session as CSV.</p>
       </div>
       <div class="card">
-        <div class="card-icon">&#128196;</div>
-        <h3>CSV export</h3>
-        <p>Download the current session or any past session as a CSV to analyse in Excel, Python, or anything else.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">&#127942;</div>
-        <h3>All-time personal bests</h3>
-        <p>Track PBs are stored per track and session type — a Monaco Qualifying PB and a Monaco Race PB are kept separately.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">&#9940;</div>
-        <h3>Invalid lap flagging</h3>
-        <p>Track-limits violations are marked clearly so a dirty lap never gets mistaken for a real time.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">&#127760;</div>
-        <h3>Works on any device</h3>
-        <p>The dashboard runs in any browser. Open it on your laptop, tablet, or phone — as long as it's on the same network.</p>
+        <div class="card-icon">&#128640;</div>
+        <h3>One-click launchers</h3>
+        <p>Double-click to start on Windows, macOS, or Linux. Your browser opens automatically — no terminal needed.</p>
       </div>
     </div>
   </div>
@@ -520,7 +535,7 @@
 <section id="how" class="how-section">
   <div class="container">
     <p class="section-label">How it works</p>
-    <h2>Up and running in three steps</h2>
+    <h2>Up and running in minutes</h2>
     <p class="section-intro" style="margin-bottom: 2.5rem;">Pitwall IQ uses F1 25's built-in UDP telemetry — no mods or extra software required.</p>
     <div class="steps">
       <div class="step">
@@ -530,19 +545,18 @@
       </div>
       <div class="step">
         <div class="step-num">02</div>
-        <h3>Run the tracker</h3>
-        <p>Requires Python 3.8+ and nothing else — no third-party packages. Uses only the standard library.</p>
-        <pre><code>python F1_lap_tracker.py</code></pre>
+        <h3>Launch the app</h3>
+        <p>Double-click the launcher for your platform — <strong>Windows</strong> (.bat), <strong>macOS</strong> (.command), or <strong>Linux</strong> (.sh). Your browser opens automatically.</p>
       </div>
       <div class="step">
         <div class="step-num">03</div>
-        <h3>Open the dashboard</h3>
-        <p>Navigate to <code>http://localhost:5000</code> in any browser. Once you enter a session the status switches to <strong>LIVE TELEMETRY</strong>.</p>
+        <h3>Enter a session</h3>
+        <p>Load into any session in F1 25. The dashboard status switches to <strong>LIVE TELEMETRY</strong> and data starts populating immediately.</p>
       </div>
       <div class="step">
         <div class="step-num">04</div>
         <h3>Drive normally</h3>
-        <p>Every lap is captured automatically. Browse past sessions, export CSVs, and track your PBs without touching a button.</p>
+        <p>Every lap, sector, and tyre is captured automatically. AI debrief and community leaderboard are built in — no setup needed.</p>
       </div>
     </div>
   </div>
@@ -551,19 +565,19 @@
 <!-- OPTIONAL FEATURES -->
 <section id="optional">
   <div class="container">
-    <p class="section-label">Optional extras</p>
-    <h2>Go further with Azure</h2>
-    <p class="section-intro">Both features are fully opt-in. The tracker works completely offline without them.</p>
+    <p class="section-label">Built-in extras</p>
+    <h2>More than just lap times</h2>
+    <p class="section-intro">Both features are built in and ready to use — no configuration or account required.</p>
     <div class="optional-grid">
       <div class="opt-card">
-        <span class="tag">Powered by Azure</span>
+        <span class="tag">Built-in &bull; No setup</span>
         <h3>AI Lap Debrief</h3>
-        <p>After any session, click <strong>AI DEBRIEF</strong> to get a race-engineer-style written analysis — pace, sector weaknesses, tyre performance, and one actionable recommendation.</p>
+        <p>Click <strong>AI DEBRIEF</strong> at any point during or after a session to get a race-engineer-style analysis — pace consistency, sector weaknesses, tyre performance, and one actionable recommendation. 10 debriefs per day, no API key needed.</p>
       </div>
       <div class="opt-card">
-        <span class="tag">Powered by Azure</span>
+        <span class="tag">Opt-in &bull; No account</span>
         <h3>Community Leaderboard</h3>
-        <p>Compare your track PBs against other players. The top-25 leaderboard appears live in the dashboard. No account required — your identity is an anonymous UUID.</p>
+        <p>Compare your track PBs against other Pitwall IQ users. The top-25 leaderboard appears live in the dashboard. Enable the <strong>SUBMIT PBs</strong> toggle to participate. Your identity is an anonymous UUID — no sign-up required.</p>
       </div>
     </div>
   </div>
@@ -584,19 +598,19 @@
         </ul>
       </div>
       <div>
-        <h3>AI Debrief (optional)</h3>
+        <h3>AI Debrief</h3>
         <ul>
-          <li>Opt-in feature</li>
-          <li>Powered by Azure</li>
-          <li>Enabled via environment variable</li>
+          <li>Built-in, no setup needed</li>
+          <li>10 debriefs per day</li>
+          <li>No API key required</li>
         </ul>
       </div>
       <div>
-        <h3>Leaderboard (optional)</h3>
+        <h3>Leaderboard</h3>
         <ul>
-          <li>Opt-in feature</li>
-          <li>Powered by Azure</li>
-          <li>Console versions supported too</li>
+          <li>Opt-in via toggle</li>
+          <li>No account or sign-up</li>
+          <li>Console versions supported</li>
         </ul>
       </div>
     </div>
