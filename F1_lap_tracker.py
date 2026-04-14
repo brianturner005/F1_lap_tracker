@@ -34,8 +34,13 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import os
 
-# ── Leaderboard config (set via environment variables) ────────────────────────
-LEADERBOARD_URL = os.environ.get("F1_LEADERBOARD_URL", "").rstrip("/")
+# ── Leaderboard config ───────────────────────────────────────────────────────
+# Default URL is the shared Pitwall IQ backend — no configuration needed.
+# Override by setting F1_LEADERBOARD_URL if you host your own instance.
+LEADERBOARD_URL = os.environ.get(
+    "F1_LEADERBOARD_URL",
+    "https://f1tracker-func-6v3lqkyuhxwkc.azurewebsites.net",
+).rstrip("/")
 # Normalise: strip trailing /api so the URL works whether or not the user
 # included it (the code appends /api/lb-submit etc. itself).
 if LEADERBOARD_URL.endswith("/api"):
