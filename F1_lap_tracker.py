@@ -98,6 +98,7 @@ state = {
     "career_stats": {"races":0,"wins":0,"podiums":0,"points":0,"fastest_laps":0,"dnfs":0},
     "race_result": None,               # populated when Final Classification packet (ID 8) arrives
     "player_fastest_lap": False,       # set True when FTLP event fires for the player
+    "race_result_saved_sid": None,     # session ID for which race result was already saved
 }
 
 TRACK_IDS = {
@@ -766,11 +767,23 @@ def parse_final_classification_packet(data, player_idx):
         best_lap_ms   = struct.unpack_from("<I", data, car_base + 6)[0]
         total_time_s  = struct.unpack_from("<d", data, car_base + 10)[0]
         best_lap_str  = ms_to_laptime(best_lap_ms) if best_lap_ms > 0 else "—"
+
+        # Only save when the race is actually over — status must be Finished,
+        # DNF, DSQ, N/C, or Retired. Ignore Invalid/Inactive/Active packets
+        # which the game sends during formation lap and mid-race.
+        FINAL_STATUSES = {3, 4, 5, 6, 7}  # Finished, DNF, DSQ, N/C, Retired
+        if result_status not in FINAL_STATUSES:
+            return
+
         with state_lock:
-            fastest  = state["player_fastest_lap"]
-            state["player_fastest_lap"] = False
-            sid      = state["current_session_id"]
-            track    = state["session"]["track"]
+            sid = state["current_session_id"]
+            # Guard against the game re-sending this packet on the results screen
+            if state["race_result_saved_sid"] == sid:
+                return
+            fastest   = state["player_fastest_lap"]
+            state["player_fastest_lap"]    = False
+            state["race_result_saved_sid"] = sid
+            track     = state["session"]["track"]
             sess_type = state["session"]["session_type"]
             state["race_result"] = {
                 "position": position,
