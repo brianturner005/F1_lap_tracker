@@ -899,7 +899,7 @@ display: flex;
 align-items: flex-start;
 }
 .sidebar {
-width: 380px;
+width: 420px;
 flex-shrink: 0;
 position: sticky;
 top: 0;
@@ -1102,7 +1102,7 @@ transition: border-color .2s;
 .btn-toggle.active { border-color: var(--green); color: var(--green); }
 
 /* Sector mini-best highlight */
-td.sector.s-best { color: var(--purple) !important; font-weight: 700; }
+td.sector.s-best { background: rgba(167,139,250,.18); color: var(--purple) !important; font-weight: 700; border-radius: 3px; }
 
 /* Toast notifications */
 #toast-container { position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
