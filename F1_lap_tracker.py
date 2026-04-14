@@ -8,7 +8,7 @@ dashboard at http://localhost:5000
 In-game setup (one time):
 Settings → Telemetry Settings
 UDP Telemetry   : On
-UDP Format      : 2023  (or 2024 if listed)
+UDP Format      : 2025
 UDP IP Address  : 127.0.0.1
 UDP Port        : 20777
 Broadcast Mode  : Off
@@ -2799,7 +2799,7 @@ def main():
     print("IN-GAME SETUP (F1 25):")
     print("  Settings → Telemetry Settings")
     print("    UDP Telemetry  : On")
-    print("    UDP Format     : 2023 (or 2024)")
+    print("    UDP Format     : 2025")
     print("    UDP IP Address : 127.0.0.1")
     print("    UDP Port       : 20777")
     print("    Broadcast Mode : Off")
