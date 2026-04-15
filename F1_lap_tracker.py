@@ -499,6 +499,9 @@ def parse_session_packet(data, player_idx):
                     state["track_pb_ms"]       = None
                     state["track_pb_time"]     = None
                     state["track_pb_compound"] = None
+            # Refresh leaderboard immediately when track becomes known
+            if LEADERBOARD_URL:
+                threading.Thread(target=_lb_refresh, daemon=True).start()
     except Exception:
         pass
 
@@ -1589,7 +1592,14 @@ async function fetchLeaderboard() {
 
 function renderLeaderboard(d) {
   const el = document.getElementById('lb-section');
-  if (!d || !d.entries || d.entries.length === 0) { el.innerHTML = ''; return; }
+  if (!d || !d.entries || d.entries.length === 0) {
+    el.innerHTML = `<div class="panel lb-wrap">
+      <div class="panel-title">Community Leaderboard</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0 0">
+        ${(!d || !d.track) ? 'Waiting for session data…' : 'No times posted for this track yet.'}
+      </p></div>`;
+    return;
+  }
   let rows = '';
   for (const e of d.entries) {
     const top3 = e.rank <= 3 ? 'top3' : '';
