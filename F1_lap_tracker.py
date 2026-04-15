@@ -911,7 +911,36 @@ def _lb_post(payload):
             pass
     threading.Thread(target=_run, daemon=True).start()
 
-def _lb_refresh(track_override=None, session_type_override=None):
+def _lb_seed_all():
+    """Submit every personal best to the community leaderboard via _lb_post."""
+    if not LEADERBOARD_URL:
+        return 0
+    with state_lock:
+        player_id    = state.get("player_id") or ""
+        display_name = state.get("display_name") or "Anonymous"
+    if not player_id:
+        return 0
+    pbs = db_get_all_pbs()
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    count = 0
+    for pb in pbs:
+        if not pb.get("lap_time_ms"):
+            continue
+        _lb_post({
+            "player_id":    player_id,
+            "display_name": display_name,
+            "track":        pb["track"],
+            "session_type": pb["session_type"],
+            "lap_time_ms":  int(pb["lap_time_ms"]),
+            "lap_time":     pb["lap_time"],
+            "compound":     pb.get("compound") or "",
+            "submitted_at": now,
+        })
+        count += 1
+    return count
+
+
     """Fetch leaderboard for the given (or current) track from Azure and cache in state."""
     if not LEADERBOARD_URL:
         return
@@ -1594,6 +1623,7 @@ backdrop-filter: blur(4px);
         <div style="display:flex;gap:4px;margin-left:auto;">
           <button id="lb-btn-mine" class="btn" onclick="switchLbView('mine')">MY TIMES</button>
           <button id="lb-btn-community" class="btn" onclick="switchLbView('community')">COMMUNITY</button>
+          <button id="lb-btn-sync" class="btn" onclick="syncMyTimes()" title="Submit all your personal bests to the community leaderboard" style="display:none">SYNC MY TIMES</button>
         </div>
       </div>
       <div id="lb-section"></div>
@@ -1678,6 +1708,7 @@ async function initLB() {
     if (!c.enabled) return;
     document.getElementById('lb-controls').style.display = 'flex';
     document.getElementById('lb-name').value = c.display_name || '';
+    document.getElementById('lb-btn-sync').style.display = 'inline-block';
     _lbOptIn = c.opt_in;
     _updateToggle();
     fetchLeaderboard();
@@ -1898,6 +1929,22 @@ function renderLeaderboard(d) {
       </table>
     </div>
   </div>`;
+}
+
+async function syncMyTimes() {
+  const btn = document.getElementById('lb-btn-sync');
+  btn.textContent = 'SYNCING…';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/lb-seed', { method: 'POST' });
+    const d = await r.json();
+    btn.textContent = `SYNCED ${d.submitted}`;
+    setTimeout(() => { btn.textContent = 'SYNC MY TIMES'; btn.disabled = false; }, 3000);
+    if (_lbView === 'community') renderCommunity();
+  } catch(e) {
+    btn.textContent = 'SYNC MY TIMES';
+    btn.disabled = false;
+  }
 }
 
 // ── AI Debrief ────────────────────────────────────────────────────────────────
@@ -3098,6 +3145,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
+        elif parsed.path == "/api/lb-seed":
+            count = _lb_seed_all()
+            payload = json.dumps({"ok": True, "submitted": count}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(payload)
         elif parsed.path == "/api/clear":
             old_session_id = None
             with state_lock:
