@@ -911,16 +911,16 @@ def _lb_post(payload):
             pass
     threading.Thread(target=_run, daemon=True).start()
 
-def _lb_refresh():
-    """Fetch leaderboard for current track from Azure and cache in state."""
+def _lb_refresh(track_override=None, session_type_override=None):
+    """Fetch leaderboard for the given (or current) track from Azure and cache in state."""
     if not LEADERBOARD_URL:
         return
     try:
         from urllib.request import urlopen
         from urllib.parse import quote
         with state_lock:
-            track        = state["session"].get("track", "Unknown")
-            session_type = state["session"].get("session_type", "Unknown")
+            track        = track_override or state["session"].get("track", "Unknown")
+            session_type = session_type_override or state["session"].get("session_type", "Unknown")
             player_id    = state.get("player_id") or ""
         if track in ("Unknown", None, ""):
             # No active session — fall back to the most recently driven track
@@ -1416,6 +1416,7 @@ tr.lb-player td { color: var(--green); }
 td.lb-rank { color: var(--muted); font-size: .7rem; width: 32px; }
 #tab-leaderboard .lb-wrap .lap-table-wrap { max-height: 600px; overflow-y: auto; }
 td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-weight: 700; }
+.btn.lb-active { background: var(--green) !important; color: #000 !important; }
 
 /* AI Debrief panel */
 .debrief-panel { border-color: rgba(199,125,255,.25) !important; }
@@ -1581,6 +1582,16 @@ backdrop-filter: blur(4px);
       </div>
     </div>
     <div id="tab-leaderboard" style="display:none">
+      <div class="panel" style="margin-bottom:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <select id="lb-track-select" onchange="onLbTrackChange()"
+          style="background:var(--bg2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:inherit;font-size:.78rem;min-width:220px;cursor:pointer">
+          <option value="">— Select Track / Session Type —</option>
+        </select>
+        <div style="display:flex;gap:4px;margin-left:auto;">
+          <button id="lb-btn-mine" class="btn" style="opacity:1" onclick="switchLbView('mine')">MY TIMES</button>
+          <button id="lb-btn-community" class="btn" onclick="switchLbView('community')">COMMUNITY</button>
+        </div>
+      </div>
       <div id="lb-section"></div>
     </div>
   </div>
@@ -1700,17 +1711,127 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ── Leaderboard tab state ─────────────────────────────────────────────────────
+let _lbView = 'mine';    // 'mine' | 'community'
+let _lbPbs  = [];        // all personal bests from DB
+let _lbTrackKey = '';    // "Track Name||Session Type"
+
 async function fetchLeaderboard() {
-  // Show a loading state while we fetch
-  const el = document.getElementById('lb-section');
-  if (el && (!el.innerHTML || el.innerHTML.includes('Waiting'))) {
-    el.innerHTML = `<div class="panel lb-wrap">
-      <div class="panel-title">Community Leaderboard</div>
-      <p style="color:var(--muted);font-size:.75rem;margin:8px 0 0">Loading…</p></div>`;
-  }
+  // Reload PBs and rebuild the track dropdown
   try {
-    // Trigger a fresh backend fetch, then wait for it to complete
-    await fetch('/api/lb-refresh', { method: 'POST' });
+    const r = await fetch('/api/pbs');
+    _lbPbs = await r.json();
+  } catch(e) { _lbPbs = []; }
+
+  // Sort by most recently set first so the dropdown defaults to your latest track
+  _lbPbs.sort((a, b) => (b.set_at || '').localeCompare(a.set_at || ''));
+
+  const select = document.getElementById('lb-track-select');
+  const seen = new Set();
+  select.innerHTML = '<option value="">— Select Track / Session Type —</option>';
+  for (const pb of _lbPbs) {
+    const key = `${pb.track}||${pb.session_type}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = `${pb.track} — ${pb.session_type || 'Unknown'}`;
+      select.appendChild(opt);
+    }
+  }
+
+  // Pre-select: keep current selection if still valid, otherwise pick first
+  if (_lbTrackKey && seen.has(_lbTrackKey)) {
+    select.value = _lbTrackKey;
+  } else if (_lbPbs.length) {
+    _lbTrackKey = `${_lbPbs[0].track}||${_lbPbs[0].session_type}`;
+    select.value = _lbTrackKey;
+  }
+
+  // Set active button styles
+  _setLbBtnActive(_lbView);
+  renderLbView();
+}
+
+function _setLbBtnActive(view) {
+  document.getElementById('lb-btn-mine').classList.toggle('lb-active', view === 'mine');
+  document.getElementById('lb-btn-community').classList.toggle('lb-active', view === 'community');
+}
+
+function onLbTrackChange() {
+  _lbTrackKey = document.getElementById('lb-track-select').value;
+  renderLbView();
+}
+
+function switchLbView(view) {
+  _lbView = view;
+  _setLbBtnActive(view);
+  renderLbView();
+}
+
+function renderLbView() {
+  if (_lbView === 'mine') renderMyTimes();
+  else renderCommunity();
+}
+
+function _parseLbKey(key) {
+  const idx = key.indexOf('||');
+  return { track: key.slice(0, idx), session_type: key.slice(idx + 2) };
+}
+
+function renderMyTimes() {
+  const el = document.getElementById('lb-section');
+  if (!_lbTrackKey) {
+    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above to see your times.</p></div>`;
+    return;
+  }
+  const { track, session_type } = _parseLbKey(_lbTrackKey);
+  const hits = _lbPbs.filter(p => p.track === track && p.session_type === session_type);
+  if (!hits.length) {
+    el.innerHTML = `<div class="panel lb-wrap">
+      <div class="panel-title">My Times — ${esc(track)} · ${esc(session_type)}</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">No times recorded yet for this track.</p>
+    </div>`;
+    return;
+  }
+  let rows = '';
+  for (const pb of hits) {
+    const setAt = pb.set_at ? pb.set_at.replace('T', ' ').substring(0, 16) : '—';
+    rows += `<tr>
+      <td class="lap-time" style="color:var(--purple)">${esc(pb.lap_time)}</td>
+      <td style="color:var(--muted);font-size:.72rem">${esc(pb.session_type || '—')}</td>
+      <td>${compoundPill(pb.compound)}</td>
+      <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
+    </tr>`;
+  }
+  el.innerHTML = `<div class="panel lb-wrap">
+    <div class="panel-title">My Times — ${esc(track)} · ${esc(session_type)}</div>
+    <div class="lap-table-wrap">
+      <table>
+        <thead><tr><th>TIME</th><th>TYPE</th><th>TYRE</th><th>SET</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+async function renderCommunity() {
+  const el = document.getElementById('lb-section');
+  if (!_lbTrackKey) {
+    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above to see the community leaderboard.</p></div>`;
+    return;
+  }
+  const { track, session_type } = _parseLbKey(_lbTrackKey);
+  el.innerHTML = `<div class="panel lb-wrap">
+    <div class="panel-title">Community — ${esc(track)} · ${esc(session_type)}</div>
+    <p style="color:var(--muted);font-size:.75rem;margin:8px 0">Loading…</p>
+  </div>`;
+  try {
+    await fetch('/api/lb-refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track, session_type }),
+    });
     await new Promise(r => setTimeout(r, 1800));
     const r = await fetch('/api/leaderboard');
     const d = await r.json();
@@ -1720,12 +1841,12 @@ async function fetchLeaderboard() {
 
 function renderLeaderboard(d) {
   const el = document.getElementById('lb-section');
+  const { track, session_type } = _lbTrackKey ? _parseLbKey(_lbTrackKey) : { track: '', session_type: '' };
   if (!d || !d.entries || d.entries.length === 0) {
     el.innerHTML = `<div class="panel lb-wrap">
-      <div class="panel-title">Community Leaderboard</div>
-      <p style="color:var(--muted);font-size:.75rem;margin:8px 0 0">
-        ${(!d || !d.track) ? 'Waiting for session data…' : 'No times posted for this track yet.'}
-      </p></div>`;
+      <div class="panel-title">Community — ${esc(track)} · ${esc(session_type)}</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">No community times posted for this track yet.</p>
+    </div>`;
     return;
   }
   let rows = '';
@@ -1733,16 +1854,17 @@ function renderLeaderboard(d) {
     const top3 = e.rank <= 3 ? 'top3' : '';
     rows += `<tr class="${e.is_player ? 'lb-player' : ''}">
       <td class="lb-rank ${top3}">${e.rank}</td>
-      <td class="lap-time" style="${e.is_player ? '' : ''}">${e.lap_time}</td>
+      <td class="lap-time">${e.lap_time}</td>
       <td>${compoundPill(e.compound)}</td>
       <td style="font-size:.78rem">${esc(e.display_name)}</td>
     </tr>`;
   }
-  const title = `${d.track} · ${d.session_type}`;
-  const rankNote = d.player_rank ? ` <span style="color:var(--green);font-size:.6rem">YOUR RANK: #${d.player_rank}</span>` : '';
+  const rankNote = d.player_rank
+    ? `<span style="color:var(--green);font-size:.6rem">YOUR RANK: #${d.player_rank}</span>`
+    : '';
   el.innerHTML = `<div class="panel lb-wrap">
-    <div class="panel-title" style="display:flex;justify-content:space-between;">
-      <span>Community Leaderboard — ${title}</span>
+    <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Community — ${esc(d.track || track)} · ${esc(d.session_type || session_type)}</span>
       ${rankNote}
     </div>
     <div class="lap-table-wrap">
@@ -1750,7 +1872,6 @@ function renderLeaderboard(d) {
         <thead><tr><th>#</th><th>TIME</th><th>TYRE</th><th>DRIVER</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>
     </div>
   </div>`;
 }
@@ -2701,7 +2822,13 @@ fetchMotion();
 setInterval(fetchState, 1000);
 setInterval(fetchPBs, 60000);
 setInterval(fetchSessions, 30000);
-setInterval(fetchLeaderboard, 60000);
+setInterval(() => {
+  // Auto-refresh community view every 60 s only when user is looking at it
+  const lbTab = document.getElementById('tab-leaderboard');
+  if (lbTab && lbTab.style.display !== 'none' && _lbView === 'community') {
+    renderCommunity();
+  }
+}, 60000);
 setInterval(fetchMotion, 250);
 </script>
 
@@ -2928,7 +3055,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/lb-refresh":
-            threading.Thread(target=_lb_refresh, daemon=True).start()
+            length = int(self.headers.get('Content-Length', 0) or 0)
+            body = {}
+            if length:
+                try:
+                    body = json.loads(self.rfile.read(length))
+                except Exception:
+                    pass
+            threading.Thread(
+                target=_lb_refresh,
+                kwargs={
+                    'track_override':        body.get('track'),
+                    'session_type_override': body.get('session_type'),
+                },
+                daemon=True,
+            ).start()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
