@@ -99,6 +99,9 @@ state = {
     "race_result": None,               # populated when Final Classification packet (ID 8) arrives
     "player_fastest_lap": False,       # set True when FTLP event fires for the player
     "race_result_saved_sid": None,     # session ID for which race result was already saved
+    "tyre_wear":     [None, None, None, None],  # [RL, RR, FL, FR] float % from Car Damage packet
+    "tyre_damage":   [None, None, None, None],  # [RL, RR, FL, FR] uint8 % structural damage
+    "tyre_age_laps": None,                      # laps on current tyre set (from Car Status)
 }
 
 TRACK_IDS = {
@@ -682,9 +685,10 @@ def parse_lap_data_packet(data, player_idx):
     except Exception:
         pass
 
-# Packet ID 7 – Car Status Data
+# Packet ID 7 – Car Status Data / Packet ID 10 – Car Damage Data
 
 CAR_STATUS_SIZE    = 55  # F1 25 per-car car status size
+CAR_DAMAGE_SIZE    = 42  # F1 25 per-car car damage size
 MOTION_CAR_SIZE    = 60  # worldPositionX/Y/Z + velocity + direction + gforce + angles
 CAR_TELEMETRY_SIZE = 60  # speed(u16) + throttle/steer/brake(f32) + gear/rpm/drs + temps
 
@@ -744,14 +748,32 @@ def parse_car_telemetry_packet(data, player_idx):
 
 def parse_car_status_packet(data, player_idx):
     try:
-        # visualTyreCompound sits at byte +26 within each car's CarStatusData block
         base = HEADER_SIZE + (player_idx * CAR_STATUS_SIZE)
         if len(data) < base + CAR_STATUS_SIZE:
             return
+        # +26 visualTyreCompound  +27 tyresAgeLaps
         visual_compound = struct.unpack_from("<B", data, base + 26)[0]
+        tyre_age        = struct.unpack_from("<B", data, base + 27)[0]
         compound_name = VISUAL_COMPOUNDS.get(visual_compound)
         with state_lock:
             state["current_compound"] = compound_name
+            state["tyre_age_laps"]    = int(tyre_age)
+    except Exception:
+        pass
+
+# Packet ID 10 – Car Damage Data
+def parse_car_damage_packet(data, player_idx):
+    try:
+        base = HEADER_SIZE + player_idx * CAR_DAMAGE_SIZE
+        if len(data) < base + 20:
+            return
+        # +0  tyresWear[4]   4 × float  (RL, RR, FL, FR)
+        # +16 tyresDamage[4] 4 × uint8  (RL, RR, FL, FR)
+        wear   = struct.unpack_from("<4f", data, base +  0)
+        damage = struct.unpack_from("<4B", data, base + 16)
+        with state_lock:
+            state["tyre_wear"]   = [round(w, 1) for w in wear]
+            state["tyre_damage"] = list(damage)
     except Exception:
         pass
 
@@ -950,6 +972,8 @@ def udp_listener():
                 parse_event_packet(data, pidx)
             elif pid == 8:
                 parse_final_classification_packet(data, pidx)
+            elif pid == 10:
+                parse_car_damage_packet(data, pidx)
         except socket.timeout:
             pass
         except Exception:
@@ -1312,6 +1336,14 @@ td.finish-bronze { color:#cd7f32; font-weight:700; }
 .toast.pb     { border-color:var(--purple); color:var(--purple); }
 .toast.sector { border-color:var(--yellow); color:var(--yellow); }
 .toast.best   { border-color:var(--green);  color:var(--green);  }
+
+/* Tyre wear diagram */
+.tyre-diagram { display:flex; flex-direction:column; align-items:center; gap:6px; padding:6px 0 2px; }
+.tyre-axle { display:flex; align-items:center; gap:10px; }
+.tyre-car-body { width:52px; height:30px; background:rgba(255,255,255,.05); border:1px solid var(--border); border-radius:5px; }
+.tyre-block { width:30px; height:50px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:.58rem; font-weight:700; font-family:'Orbitron',sans-serif; transition:background-color .8s; }
+.tyre-corner-label { font-size:.5rem; letter-spacing:.08em; color:var(--muted); text-align:center; width:30px; }
+.tyre-row-labels { display:flex; align-items:center; gap:10px; }
 
 /* Lap comparison */
 .comp-cell { white-space:nowrap; }
@@ -1965,6 +1997,53 @@ function compoundPill(c) {
   return `<span class="cpill cpill-${abbr}">${abbr}</span>`;
 }
 
+// ── Tyre wear diagram ─────────────────────────────────────────────────────────
+function _tyreWearColor(w) {
+  if (w === null || w === undefined) return 'rgba(255,255,255,.06)';
+  if (w < 25) return '#00d68f';   // green  — new/good
+  if (w < 50) return '#ffd700';   // gold   — some wear
+  if (w < 75) return '#ff8c00';   // orange — heavy wear
+  return '#e10600';               // red    — critical
+}
+function _tyreTextColor(w) {
+  if (w === null || w === undefined) return '#666';
+  return w < 50 ? '#000' : '#fff';
+}
+
+function renderTyreDiagram(d) {
+  const wear = d.tyre_wear || [null, null, null, null]; // [RL, RR, FL, FR]
+  // Skip panel entirely if no data received yet
+  if (wear.every(v => v === null)) return '';
+  const fl = wear[2], fr = wear[3], rl = wear[0], rr = wear[1];
+  const age = d.tyre_age_laps != null
+    ? `<div style="font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-top:2px">${d.tyre_age_laps} LAP${d.tyre_age_laps !== 1 ? 'S' : ''} ON SET</div>`
+    : '';
+  function tyre(w) {
+    const bg  = _tyreWearColor(w);
+    const col = _tyreTextColor(w);
+    const txt = w !== null ? Math.round(w) + '%' : '—';
+    return `<div class="tyre-block" style="background:${bg};color:${col}">${txt}</div>`;
+  }
+  return `<div class="panel">
+    <div class="panel-title">Tyre Wear</div>
+    <div class="tyre-diagram">
+      <div class="tyre-row-labels">
+        <span class="tyre-corner-label">FL</span>
+        <span style="width:52px"></span>
+        <span class="tyre-corner-label">FR</span>
+      </div>
+      <div class="tyre-axle">${tyre(fl)}<div class="tyre-car-body"></div>${tyre(fr)}</div>
+      <div class="tyre-axle">${tyre(rl)}<div class="tyre-car-body"></div>${tyre(rr)}</div>
+      <div class="tyre-row-labels">
+        <span class="tyre-corner-label">RL</span>
+        <span style="width:52px"></span>
+        <span class="tyre-corner-label">RR</span>
+      </div>
+      ${age}
+    </div>
+  </div>`;
+}
+
 function render(d) {
   const dot = document.getElementById('dot');
   const stxt = document.getElementById('status-text');
@@ -2089,7 +2168,7 @@ function render(d) {
     </div>
   </div>`;
 
-  sidebar.innerHTML  = p1 + p2 + p3;
+  sidebar.innerHTML  = p1 + p2 + p3 + renderTyreDiagram(d);
   lapTable.innerHTML = p4;
   _updateTrackSvg(d.track_svg || null);
 }
