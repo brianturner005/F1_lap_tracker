@@ -13,6 +13,10 @@
       --text:   #e8e8e8;
       --muted:  #888;
       --gold:   #ffd700;
+      --glass: rgba(255,255,255,.035);
+      --glass-hi: rgba(255,255,255,.07);
+      --glass-border: rgba(255,255,255,.09);
+      --shadow-card: 0 4px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -22,6 +26,7 @@
       color: var(--text);
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       line-height: 1.6;
+      background-image: radial-gradient(ellipse 70% 50% at 8% 30%, rgba(0,184,107,.05) 0%, transparent 65%);
     }
 
     a { color: var(--accent); text-decoration: none; }
@@ -179,14 +184,23 @@
     }
 
     .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      background: linear-gradient(145deg, var(--glass-hi) 0%, var(--glass) 100%);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
       padding: 1.5rem;
-      transition: border-color 0.2s;
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.2s, transform 0.15s;
+      position: relative;
+      overflow: hidden;
     }
 
-    .card:hover { border-color: #444; }
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 15%; right: 15%; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0,184,107,.5), transparent);
+    }
+
+    .card:hover { border-color: rgba(255,255,255,.16); transform: translateY(-2px); }
 
     .card-icon {
       font-size: 1.6rem;
@@ -206,7 +220,7 @@
     }
 
     /* ── How it works ── */
-    .how-section { background: #111; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .how-section { background: linear-gradient(180deg, #111 0%, #0d0d0d 100%); border-top: 1px solid var(--glass-border); border-bottom: 1px solid var(--glass-border); }
 
     .steps {
       display: grid;
@@ -226,35 +240,37 @@
 
     /* ── Lap table preview ── */
     .lap-preview {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      background: linear-gradient(145deg, var(--glass-hi) 0%, var(--glass) 100%);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
       overflow: hidden;
       font-size: 0.85rem;
       width: 100%;
       max-width: 720px;
       margin: 0 auto;
+      box-shadow: var(--shadow-card);
     }
 
     .lap-preview table { width: 100%; border-collapse: collapse; }
 
     .lap-preview th {
-      background: #222;
+      background: rgba(255,255,255,.04);
       color: var(--muted);
       font-size: 0.75rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      padding: 0.6rem 1rem;
+      padding: 0.7rem 1rem;
       text-align: left;
+      border-bottom: 1px solid var(--glass-border);
     }
 
     .lap-preview td {
       padding: 0.65rem 1rem;
-      border-top: 1px solid var(--border);
+      border-top: 1px solid rgba(255,255,255,.04);
       font-variant-numeric: tabular-nums;
     }
 
-    .lap-preview tr.pb td { background: rgba(255,215,0,0.06); }
+    .lap-preview tr.pb td { background: rgba(255,215,0,0.07); }
     .lap-preview tr.pb td:first-child { color: var(--gold); }
 
     .tyre {
@@ -290,10 +306,19 @@
     }
 
     .opt-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      background: linear-gradient(145deg, var(--glass-hi) 0%, var(--glass) 100%);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
       padding: 1.75rem;
+      box-shadow: var(--shadow-card);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .opt-card::before {
+      content: '';
+      position: absolute; top: 0; left: 15%; right: 15%; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0,184,107,.45), transparent);
     }
 
     .opt-card .tag {
@@ -302,9 +327,10 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--muted);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 0.15rem 0.5rem;
+      border: 1px solid var(--glass-border);
+      background: var(--glass);
+      border-radius: 6px;
+      padding: 0.2rem 0.6rem;
       display: inline-block;
       margin-bottom: 1rem;
     }
@@ -314,13 +340,14 @@
 
     /* ── Requirements ── */
     .req-box {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      background: linear-gradient(145deg, var(--glass-hi) 0%, var(--glass) 100%);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
       padding: 2rem;
       display: flex;
       gap: 3rem;
       flex-wrap: wrap;
+      box-shadow: var(--shadow-card);
     }
 
     .req-box h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem; }
