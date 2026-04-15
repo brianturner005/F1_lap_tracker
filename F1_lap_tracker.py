@@ -778,6 +778,8 @@ def parse_final_classification_packet(data, player_idx):
         if result_status not in FINAL_STATUSES:
             return
 
+        RACE_SESSION_TYPES = {"Race", "Race 2", "Race 3"}
+
         with state_lock:
             sid = state["current_session_id"]
             # Guard against the game re-sending this packet on the results screen
@@ -788,6 +790,12 @@ def parse_final_classification_packet(data, player_idx):
             state["race_result_saved_sid"] = sid
             track     = state["session"]["track"]
             sess_type = state["session"]["session_type"]
+
+        # Only record career results for race sessions
+        if sess_type not in RACE_SESSION_TYPES:
+            return
+
+        with state_lock:
             state["race_result"] = {
                 "position": position,
                 "grid_pos": grid_pos,
