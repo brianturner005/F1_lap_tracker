@@ -941,6 +941,7 @@ def _lb_seed_all():
     return count
 
 
+def _lb_refresh(track_override=None, session_type_override=None):
     """Fetch leaderboard for the given (or current) track from Azure and cache in state."""
     if not LEADERBOARD_URL:
         return
