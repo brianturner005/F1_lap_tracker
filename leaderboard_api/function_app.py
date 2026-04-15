@@ -358,17 +358,50 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
             f"{lap.get('s3', '—'):>9} | {valid}"
         )
 
+    # Build telemetry table if any laps have telem data
+    telem_laps = [lap for lap in laps if lap.get("telem")]
+    telem_section = ""
+    if telem_laps:
+        th = "Lap | MaxSpd | AvgSpd | AvgThr% | FullThr% | AvgBrk% | HvyBrk% | MaxGLat"
+        trows = []
+        for lap in telem_laps:
+            t = lap["telem"]
+            trows.append(
+                f"Lap {lap.get('lap_num', '?'):>3} | "
+                f"{t.get('max_speed', '—'):>6} | "
+                f"{t.get('avg_speed', '—'):>6} | "
+                f"{t.get('avg_throttle', '—'):>7} | "
+                f"{t.get('full_throttle_pct', '—'):>8} | "
+                f"{t.get('avg_brake', '—'):>7} | "
+                f"{t.get('heavy_brake_pct', '—'):>7} | "
+                f"{t.get('max_g_lat', '—'):>7}"
+            )
+        telem_section = (
+            "\n\nTelemetry data (speed km/h, throttle/brake as %, G-force):\n"
+            f"{th}\n" + "\n".join(trows)
+        )
+
+    has_telem = bool(telem_laps)
+    telem_instruction = (
+        " Where telemetry data is available, reference it specifically — "
+        "comment on top speed, throttle application (full-throttle %), "
+        "braking commitment (heavy-brake %), and peak lateral G as indicators of "
+        "driving style and corner technique. Cross-reference with sector times to "
+        "pinpoint where time is being lost."
+        if has_telem else ""
+    )
+
     prompt = (
         "You are a Formula 1 race engineer giving a post-session debrief to a sim racing driver.\n"
-        "Analyse the lap data below and give a concise, insightful debrief (3–5 short paragraphs).\n"
+        "Analyse the lap and telemetry data below and give a concise, insightful debrief (3–5 short paragraphs).\n"
         "Cover: pace consistency, sector weaknesses, tyre compound performance, best lap analysis, "
-        "and one actionable recommendation for the next session.\n"
+        f"and one actionable recommendation for the next session.{telem_instruction}\n"
         "Use F1 engineering language. Be direct. Interpret the numbers — do not just repeat them.\n\n"
         f"Session: {track} — {sess_type} — {weather}\n"
         f"Session Best: {best_time}\n"
         f"Track PB: {pb_time}{pb_suffix}\n"
         f"Total laps: {len(laps)}\n\n"
-        f"Lap data:\n{header}\n" + "\n".join(rows)
+        f"Lap data:\n{header}\n" + "\n".join(rows) + telem_section
     )
 
     # ── Call Azure OpenAI ─────────────────────────────────────────────────────
@@ -382,7 +415,7 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
     aoai_url     = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01"
     aoai_payload = json.dumps({
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 600,
+        "max_tokens": 800,
         "temperature": 0.7,
     }).encode()
 

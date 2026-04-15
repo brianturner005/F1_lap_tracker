@@ -640,6 +640,26 @@ def parse_lap_data_packet(data, player_idx):
                     state["track_outline"] = saved_trace
                 state["lap_trace"] = []
 
+        # Compute aggregate telemetry stats from the trace and store in lap record
+        if saved_trace:
+            n = len(saved_trace)
+            max_spd  = max(p["speed"]              for p in saved_trace)
+            avg_spd  = sum(p["speed"]              for p in saved_trace) / n
+            avg_thr  = sum(p["throttle"]           for p in saved_trace) / n * 100
+            ft_pct   = sum(1 for p in saved_trace if p["throttle"] >= 0.95) / n * 100
+            avg_brk  = sum(p["brake"]              for p in saved_trace) / n * 100
+            hb_pct   = sum(1 for p in saved_trace if p["brake"] >= 0.5)  / n * 100
+            max_g    = max(abs(p.get("gLat", 0))   for p in saved_trace)
+            lap_record["telem"] = {
+                "max_speed":         round(max_spd),
+                "avg_speed":         round(avg_spd),
+                "avg_throttle":      round(avg_thr),
+                "full_throttle_pct": round(ft_pct),
+                "avg_brake":         round(avg_brk),
+                "heavy_brake_pct":   round(hb_pct),
+                "max_g_lat":         round(max_g, 2),
+            }
+
         if save_session_id is not None:
             db_save_lap(save_session_id, lap_record, trace=saved_trace)
         if save_pb_data is not None:
