@@ -40,7 +40,7 @@ import os
 LEADERBOARD_URL = os.environ.get(
     "F1_LEADERBOARD_URL",
     "https://f1tracker-func-6v3lqkyuhxwkc.azurewebsites.net",
-).rstrip("/")
+).strip().strip('"\'').rstrip("/")
 # Normalise: strip trailing /api so the URL works whether or not the user
 # included it (the code appends /api/lb-submit etc. itself).
 if LEADERBOARD_URL.endswith("/api"):
@@ -886,20 +886,22 @@ def parse_final_classification_packet(data, player_idx):
 
 # ── Community leaderboard ─────────────────────────────────────────────────────
 
-def _lb_post(payload):
-    """POST payload dict to leaderboard /api/lb-submit in background."""
+def _lb_post(payload, background=True):
+    """POST payload dict to leaderboard /api/lb-submit.
+
+    background=True  fires a daemon thread (normal PB submission).
+    background=False submits synchronously and returns the result dict.
+    """
     if not LEADERBOARD_URL:
-        return
+        return None
     def _run():
         try:
             from urllib.request import urlopen, Request as UReq
             data = json.dumps(payload).encode()
-            req = UReq(
-                f"{LEADERBOARD_URL}/api/lb-submit",
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
+            url = f"{LEADERBOARD_URL}/api/lb-submit"
+            req = UReq(url, data=data,
+                       headers={"Content-Type": "application/json"},
+                       method="POST")
             with urlopen(req, timeout=10) as resp:
                 result = json.loads(resp.read())
                 if result.get("rank"):
@@ -907,18 +909,25 @@ def _lb_post(payload):
                         lb = state.get("leaderboard") or {}
                         lb["player_rank"] = result["rank"]
                         state["leaderboard"] = lb
-        except Exception:
-            pass
-    threading.Thread(target=_run, daemon=True).start()
+                return result
+        except Exception as exc:
+            print(f"[lb-submit] ERROR posting to {LEADERBOARD_URL}/api/lb-submit: {exc}")
+            return {"ok": False, "error": str(exc)}
+    if background:
+        threading.Thread(target=_run, daemon=True).start()
+        return None
+    return _run()
 
 def _lb_seed_all():
-    """Submit every personal best to the community leaderboard via _lb_post."""
+    """Submit every personal best to the community leaderboard synchronously."""
     if not LEADERBOARD_URL:
+        print("[lb-seed] Skipped — no LEADERBOARD_URL configured")
         return 0
     with state_lock:
         player_id    = state.get("player_id") or ""
         display_name = state.get("display_name") or "Anonymous"
     if not player_id:
+        print("[lb-seed] Skipped — no player_id in state")
         return 0
     pbs = db_get_all_pbs()
     import datetime as _dt
@@ -927,7 +936,7 @@ def _lb_seed_all():
     for pb in pbs:
         if not pb.get("lap_time_ms"):
             continue
-        _lb_post({
+        result = _lb_post({
             "player_id":    player_id,
             "display_name": display_name,
             "track":        pb["track"],
@@ -936,8 +945,11 @@ def _lb_seed_all():
             "lap_time":     pb["lap_time"],
             "compound":     pb.get("compound") or "",
             "submitted_at": now,
-        })
-        count += 1
+        }, background=False)
+        ok = result and result.get("ok")
+        print(f"[lb-seed] {pb['track']} / {pb['session_type']}: {'ok rank #' + str(result.get('rank')) if ok else result}")
+        if ok:
+            count += 1
     return count
 
 
