@@ -1582,13 +1582,17 @@ backdrop-filter: blur(4px);
       </div>
     </div>
     <div id="tab-leaderboard" style="display:none">
-      <div class="panel" style="margin-bottom:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div class="panel" style="margin-bottom:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <select id="lb-track-select" onchange="onLbTrackChange()"
-          style="background:var(--bg2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:inherit;font-size:.78rem;min-width:220px;cursor:pointer">
-          <option value="">— Select Track / Session Type —</option>
+          style="background:var(--bg2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:inherit;font-size:.78rem;min-width:180px;cursor:pointer">
+          <option value="">— Track —</option>
+        </select>
+        <select id="lb-sesstype-select" onchange="onLbSessTypeChange()"
+          style="background:var(--bg2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:inherit;font-size:.78rem;min-width:130px;cursor:pointer">
+          <option value="">— Session Type —</option>
         </select>
         <div style="display:flex;gap:4px;margin-left:auto;">
-          <button id="lb-btn-mine" class="btn" style="opacity:1" onclick="switchLbView('mine')">MY TIMES</button>
+          <button id="lb-btn-mine" class="btn" onclick="switchLbView('mine')">MY TIMES</button>
           <button id="lb-btn-community" class="btn" onclick="switchLbView('community')">COMMUNITY</button>
         </div>
       </div>
@@ -1712,45 +1716,67 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── Leaderboard tab state ─────────────────────────────────────────────────────
-let _lbView = 'mine';    // 'mine' | 'community'
-let _lbPbs  = [];        // all personal bests from DB
-let _lbTrackKey = '';    // "Track Name||Session Type"
+let _lbView        = 'mine';   // 'mine' | 'community'
+let _lbPbs         = [];       // all personal bests from DB
+let _lbTrack       = '';       // selected track name
+let _lbSessionType = '';       // selected session type
 
 async function fetchLeaderboard() {
-  // Reload PBs and rebuild the track dropdown
   try {
     const r = await fetch('/api/pbs');
     _lbPbs = await r.json();
   } catch(e) { _lbPbs = []; }
 
-  // Sort by most recently set first so the dropdown defaults to your latest track
+  // Most recently driven first
   _lbPbs.sort((a, b) => (b.set_at || '').localeCompare(a.set_at || ''));
 
-  const select = document.getElementById('lb-track-select');
-  const seen = new Set();
-  select.innerHTML = '<option value="">— Select Track / Session Type —</option>';
+  // Build track dropdown (unique tracks)
+  const trackSelect = document.getElementById('lb-track-select');
+  const tracksSeen = new Set();
+  trackSelect.innerHTML = '<option value="">— Track —</option>';
   for (const pb of _lbPbs) {
-    const key = `${pb.track}||${pb.session_type}`;
-    if (!seen.has(key)) {
-      seen.add(key);
+    if (!tracksSeen.has(pb.track)) {
+      tracksSeen.add(pb.track);
       const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = `${pb.track} — ${pb.session_type || 'Unknown'}`;
-      select.appendChild(opt);
+      opt.value = pb.track;
+      opt.textContent = pb.track;
+      trackSelect.appendChild(opt);
     }
   }
 
-  // Pre-select: keep current selection if still valid, otherwise pick first
-  if (_lbTrackKey && seen.has(_lbTrackKey)) {
-    select.value = _lbTrackKey;
+  // Keep existing selection or default to first
+  if (_lbTrack && tracksSeen.has(_lbTrack)) {
+    trackSelect.value = _lbTrack;
   } else if (_lbPbs.length) {
-    _lbTrackKey = `${_lbPbs[0].track}||${_lbPbs[0].session_type}`;
-    select.value = _lbTrackKey;
+    _lbTrack = _lbPbs[0].track;
+    trackSelect.value = _lbTrack;
   }
 
-  // Set active button styles
+  _buildSessTypeDropdown();
   _setLbBtnActive(_lbView);
   renderLbView();
+}
+
+function _buildSessTypeDropdown() {
+  const sessSelect = document.getElementById('lb-sesstype-select');
+  const types = [...new Set(
+    _lbPbs.filter(pb => pb.track === _lbTrack).map(pb => pb.session_type)
+  )];
+  sessSelect.innerHTML = '<option value="">— Session Type —</option>';
+  for (const st of types) {
+    const opt = document.createElement('option');
+    opt.value = st;
+    opt.textContent = st || 'Unknown';
+    sessSelect.appendChild(opt);
+  }
+  if (_lbSessionType && types.includes(_lbSessionType)) {
+    sessSelect.value = _lbSessionType;
+  } else if (types.length) {
+    _lbSessionType = types[0];
+    sessSelect.value = _lbSessionType;
+  } else {
+    _lbSessionType = '';
+  }
 }
 
 function _setLbBtnActive(view) {
@@ -1759,7 +1785,14 @@ function _setLbBtnActive(view) {
 }
 
 function onLbTrackChange() {
-  _lbTrackKey = document.getElementById('lb-track-select').value;
+  _lbTrack = document.getElementById('lb-track-select').value;
+  _lbSessionType = '';
+  _buildSessTypeDropdown();
+  renderLbView();
+}
+
+function onLbSessTypeChange() {
+  _lbSessionType = document.getElementById('lb-sesstype-select').value;
   renderLbView();
 }
 
@@ -1774,23 +1807,17 @@ function renderLbView() {
   else renderCommunity();
 }
 
-function _parseLbKey(key) {
-  const idx = key.indexOf('||');
-  return { track: key.slice(0, idx), session_type: key.slice(idx + 2) };
-}
-
 function renderMyTimes() {
   const el = document.getElementById('lb-section');
-  if (!_lbTrackKey) {
-    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above to see your times.</p></div>`;
+  if (!_lbTrack || !_lbSessionType) {
+    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track and session type above.</p></div>`;
     return;
   }
-  const { track, session_type } = _parseLbKey(_lbTrackKey);
-  const hits = _lbPbs.filter(p => p.track === track && p.session_type === session_type);
+  const hits = _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
   if (!hits.length) {
     el.innerHTML = `<div class="panel lb-wrap">
-      <div class="panel-title">My Times — ${esc(track)} · ${esc(session_type)}</div>
-      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">No times recorded yet for this track.</p>
+      <div class="panel-title">My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">No times recorded yet for this combination.</p>
     </div>`;
     return;
   }
@@ -1799,16 +1826,15 @@ function renderMyTimes() {
     const setAt = pb.set_at ? pb.set_at.replace('T', ' ').substring(0, 16) : '—';
     rows += `<tr>
       <td class="lap-time" style="color:var(--purple)">${esc(pb.lap_time)}</td>
-      <td style="color:var(--muted);font-size:.72rem">${esc(pb.session_type || '—')}</td>
       <td>${compoundPill(pb.compound)}</td>
       <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
     </tr>`;
   }
   el.innerHTML = `<div class="panel lb-wrap">
-    <div class="panel-title">My Times — ${esc(track)} · ${esc(session_type)}</div>
+    <div class="panel-title">My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}</div>
     <div class="lap-table-wrap">
       <table>
-        <thead><tr><th>TIME</th><th>TYPE</th><th>TYRE</th><th>SET</th></tr></thead>
+        <thead><tr><th>TIME</th><th>TYRE</th><th>SET</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -1817,20 +1843,19 @@ function renderMyTimes() {
 
 async function renderCommunity() {
   const el = document.getElementById('lb-section');
-  if (!_lbTrackKey) {
-    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above to see the community leaderboard.</p></div>`;
+  if (!_lbTrack || !_lbSessionType) {
+    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track and session type above.</p></div>`;
     return;
   }
-  const { track, session_type } = _parseLbKey(_lbTrackKey);
   el.innerHTML = `<div class="panel lb-wrap">
-    <div class="panel-title">Community — ${esc(track)} · ${esc(session_type)}</div>
+    <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(_lbSessionType)}</div>
     <p style="color:var(--muted);font-size:.75rem;margin:8px 0">Loading…</p>
   </div>`;
   try {
     await fetch('/api/lb-refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ track, session_type }),
+      body: JSON.stringify({ track: _lbTrack, session_type: _lbSessionType }),
     });
     await new Promise(r => setTimeout(r, 1800));
     const r = await fetch('/api/leaderboard');
@@ -1841,10 +1866,9 @@ async function renderCommunity() {
 
 function renderLeaderboard(d) {
   const el = document.getElementById('lb-section');
-  const { track, session_type } = _lbTrackKey ? _parseLbKey(_lbTrackKey) : { track: '', session_type: '' };
   if (!d || !d.entries || d.entries.length === 0) {
     el.innerHTML = `<div class="panel lb-wrap">
-      <div class="panel-title">Community — ${esc(track)} · ${esc(session_type)}</div>
+      <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(_lbSessionType)}</div>
       <p style="color:var(--muted);font-size:.75rem;margin:8px 0">No community times posted for this track yet.</p>
     </div>`;
     return;
@@ -1864,7 +1888,7 @@ function renderLeaderboard(d) {
     : '';
   el.innerHTML = `<div class="panel lb-wrap">
     <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
-      <span>Community — ${esc(d.track || track)} · ${esc(d.session_type || session_type)}</span>
+      <span>Community — ${esc(d.track || _lbTrack)} · ${esc(d.session_type || _lbSessionType)}</span>
       ${rankNote}
     </div>
     <div class="lap-table-wrap">

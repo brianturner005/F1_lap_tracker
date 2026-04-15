@@ -1,24 +1,23 @@
 """
-seed_leaderboard.py — Post 5-minute placeholder times to the community leaderboard
-for every track/session-type combo in your local personal_bests DB.
+seed_leaderboard.py — Submit your local personal bests to the community leaderboard.
+
+Useful if you set times before the leaderboard feature was configured, or if you
+want to re-sync your historical bests after a fresh install.
 
 Usage:
     python seed_leaderboard.py
 
-The placeholder driver is identified as "TestDriver" with player_id
-"test_placeholder_seed". Because the leaderboard only saves a time if it is
-FASTER than an existing entry for that player_id, running this twice is safe.
-Real driver entries (with your actual player_id) will never be affected.
+The leaderboard only updates an entry if the submitted time is FASTER than the
+existing one, so running this multiple times is safe.
 
-Set F1_LEADERBOARD_URL env var if you host your own instance, otherwise the
-default shared Pitwall IQ backend is used.
+Set F1_LEADERBOARD_URL env var if you host your own instance.
 """
 
 import json
 import os
 import sqlite3
-import urllib.request as urllib
 from datetime import datetime, timezone
+from urllib.request import urlopen, Request as URLRequest
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -31,62 +30,80 @@ if LEADERBOARD_URL.endswith("/api"):
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "f1_laps.db")
 
-PLACEHOLDER_PLAYER_ID   = "test_placeholder_seed"
-PLACEHOLDER_DISPLAY     = "Test Driver"
-PLACEHOLDER_LAP_MS      = 5 * 60 * 1000   # 5:00.000
-PLACEHOLDER_LAP_TIME    = "5:00.000"
-PLACEHOLDER_COMPOUND    = ""
+
+def get_config():
+    """Read player_id and display_name from the app's config table."""
+    con = sqlite3.connect(DB_PATH)
+    def _get(key, default):
+        row = con.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()
+        return row[0] if row else default
+    player_id    = _get("player_id", None)
+    display_name = _get("display_name", "Anonymous")
+    con.close()
+    return player_id, display_name
 
 
-def get_all_track_combos():
-    """Return all unique (track, session_type) pairs from personal_bests."""
+def get_all_pbs():
+    """Return all personal bests from the DB."""
     con = sqlite3.connect(DB_PATH)
     rows = con.execute(
-        "SELECT DISTINCT track, session_type FROM personal_bests ORDER BY track"
+        "SELECT track, session_type, lap_time_ms, lap_time, compound "
+        "FROM personal_bests ORDER BY track, session_type"
     ).fetchall()
     con.close()
     return rows
 
 
-def submit_time(track: str, session_type: str) -> dict:
+def submit_time(player_id, display_name, track, session_type,
+                lap_time_ms, lap_time, compound) -> dict:
     payload = json.dumps({
-        "player_id":    PLACEHOLDER_PLAYER_ID,
-        "display_name": PLACEHOLDER_DISPLAY,
+        "player_id":    player_id,
+        "display_name": display_name,
         "track":        track,
         "session_type": session_type,
-        "lap_time_ms":  PLACEHOLDER_LAP_MS,
-        "lap_time":     PLACEHOLDER_LAP_TIME,
-        "compound":     PLACEHOLDER_COMPOUND,
+        "lap_time_ms":  int(lap_time_ms),
+        "lap_time":     lap_time,
+        "compound":     compound or "",
         "submitted_at": datetime.now(timezone.utc).isoformat(),
     }).encode()
 
-    req = urllib.Request(
+    req = URLRequest(
         f"{LEADERBOARD_URL}/api/lb-submit",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     try:
-        with urllib.urlopen(req, timeout=10) as resp:
+        with urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 
 def main():
-    combos = get_all_track_combos()
-    if not combos:
-        print("No personal bests found in the DB — nothing to seed.")
+    player_id, display_name = get_config()
+    if not player_id:
+        print("No player_id found — start the app at least once first.")
         return
 
-    print(f"Seeding {len(combos)} track/session combo(s) with a {PLACEHOLDER_LAP_TIME} placeholder…\n")
-    for track, session_type in combos:
-        result = submit_time(track, session_type)
-        status = "ok" if result.get("ok") else f"FAILED: {result.get('error', '?')}"
-        print(f"  {track:30s} | {session_type:15s} → {status}")
+    pbs = get_all_pbs()
+    if not pbs:
+        print("No personal bests found in the DB — nothing to submit.")
+        return
 
-    print("\nDone. Community leaderboard entries with 5:00.000 placeholder times are now live.")
-    print("Any real driver time will rank above these since 5 minutes is very slow.")
+    print(f"Submitting {len(pbs)} personal best(s) as '{display_name}'...\n")
+    for track, session_type, lap_time_ms, lap_time, compound in pbs:
+        result = submit_time(player_id, display_name, track, session_type,
+                             lap_time_ms, lap_time, compound)
+        if result.get("ok"):
+            rank = result.get("rank", "?")
+            updated = result.get("updated", False)
+            note = f"rank #{rank}" + (" — new best!" if updated else " (no improvement)")
+        else:
+            note = f"FAILED: {result.get('error', '?')}"
+        print(f"  {track:30s} | {session_type:15s} | {lap_time:12s} → {note}")
+
+    print("\nDone.")
 
 
 if __name__ == "__main__":
