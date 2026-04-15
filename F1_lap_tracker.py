@@ -8,7 +8,7 @@ dashboard at http://localhost:5000
 In-game setup (one time):
 Settings → Telemetry Settings
 UDP Telemetry   : On
-UDP Format      : 2023  (or 2024 if listed)
+UDP Format      : 2025
 UDP IP Address  : 127.0.0.1
 UDP Port        : 20777
 Broadcast Mode  : Off
@@ -499,6 +499,9 @@ def parse_session_packet(data, player_idx):
                     state["track_pb_ms"]       = None
                     state["track_pb_time"]     = None
                     state["track_pb_compound"] = None
+            # Refresh leaderboard immediately when track becomes known
+            if LEADERBOARD_URL:
+                threading.Thread(target=_lb_refresh, daemon=True).start()
     except Exception:
         pass
 
@@ -775,6 +778,8 @@ def parse_final_classification_packet(data, player_idx):
         if result_status not in FINAL_STATUSES:
             return
 
+        RACE_SESSION_TYPES = {"Race", "Race 2", "Race 3"}
+
         with state_lock:
             sid = state["current_session_id"]
             # Guard against the game re-sending this packet on the results screen
@@ -785,6 +790,12 @@ def parse_final_classification_packet(data, player_idx):
             state["race_result_saved_sid"] = sid
             track     = state["session"]["track"]
             sess_type = state["session"]["session_type"]
+
+        # Only record career results for race sessions
+        if sess_type not in RACE_SESSION_TYPES:
+            return
+
+        with state_lock:
             state["race_result"] = {
                 "position": position,
                 "grid_pos": grid_pos,
@@ -1589,7 +1600,14 @@ async function fetchLeaderboard() {
 
 function renderLeaderboard(d) {
   const el = document.getElementById('lb-section');
-  if (!d || !d.entries || d.entries.length === 0) { el.innerHTML = ''; return; }
+  if (!d || !d.entries || d.entries.length === 0) {
+    el.innerHTML = `<div class="panel lb-wrap">
+      <div class="panel-title">Community Leaderboard</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0 0">
+        ${(!d || !d.track) ? 'Waiting for session data…' : 'No times posted for this track yet.'}
+      </p></div>`;
+    return;
+  }
   let rows = '';
   for (const e of d.entries) {
     const top3 = e.rank <= 3 ? 'top3' : '';
@@ -2799,7 +2817,7 @@ def main():
     print("IN-GAME SETUP (F1 25):")
     print("  Settings → Telemetry Settings")
     print("    UDP Telemetry  : On")
-    print("    UDP Format     : 2023 (or 2024)")
+    print("    UDP Format     : 2025")
     print("    UDP IP Address : 127.0.0.1")
     print("    UDP Port       : 20777")
     print("    Broadcast Mode : Off")
