@@ -29,7 +29,7 @@ LEADERBOARD_URL = os.environ.get(
 if LEADERBOARD_URL.endswith("/api"):
     LEADERBOARD_URL = LEADERBOARD_URL[:-4]
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "f1_telemetry.db")
+DB_PATH = os.path.join(os.path.dirname(__file__), "f1_laps.db")
 
 PLACEHOLDER_PLAYER_ID   = "test_placeholder_seed"
 PLACEHOLDER_DISPLAY     = "Test Driver"
