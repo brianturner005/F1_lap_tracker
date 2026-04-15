@@ -781,21 +781,26 @@ def parse_final_classification_packet(data, player_idx):
         RACE_SESSION_TYPES = {"Race", "Race 2", "Race 3"}
 
         with state_lock:
-            sid = state["current_session_id"]
-            # Guard against the game re-sending this packet on the results screen
-            if state["race_result_saved_sid"] == sid:
-                return
-            fastest   = state["player_fastest_lap"]
-            state["player_fastest_lap"]    = False
-            state["race_result_saved_sid"] = sid
+            sid       = state["current_session_id"]
             track     = state["session"]["track"]
             sess_type = state["session"]["session_type"]
 
+        print(f"[Final Classification] status={result_status} pos={position} "
+              f"sess='{sess_type}' track='{track}' sid={sid}")
+
         # Only record career results for race sessions
         if sess_type not in RACE_SESSION_TYPES:
+            print(f"[Final Classification] skipped — session type '{sess_type}' not a race")
             return
 
         with state_lock:
+            # Guard against the game re-sending this packet on the results screen
+            if sid is not None and state["race_result_saved_sid"] == sid:
+                print(f"[Final Classification] skipped — already saved for session {sid}")
+                return
+            fastest = state["player_fastest_lap"]
+            state["player_fastest_lap"]    = False
+            state["race_result_saved_sid"] = sid
             state["race_result"] = {
                 "position": position,
                 "grid_pos": grid_pos,
@@ -1334,7 +1339,7 @@ tr.comp-b-row td { background:rgba(247,164,76,.07); }
 tr.lb-player { background: rgba(0,214,143,.08); }
 tr.lb-player td { color: var(--green); }
 td.lb-rank { color: var(--muted); font-size: .7rem; width: 32px; }
-.sidebar .lb-wrap .lap-table-wrap { max-height: 280px; overflow-y: auto; }
+#tab-leaderboard .lb-wrap .lap-table-wrap { max-height: 600px; overflow-y: auto; }
 td.lb-rank.top3 { color: var(--gold); font-family: 'Orbitron', sans-serif; font-weight: 700; }
 
 /* AI Debrief panel */
@@ -1459,12 +1464,12 @@ backdrop-filter: blur(4px);
         <button class="map-mode-btn" id="lap-nav-live" onclick="lapNavLive()" style="margin-left:4px;border-color:var(--green);color:var(--green);">LIVE</button>
       </div>
     </div>
-    <div id="lb-section"></div>
   </aside>
   <div class="main-col">
     <div class="tab-bar">
       <button class="tab active" id="tab-btn-session" onclick="switchTab('session')">SESSION</button>
       <button class="tab" id="tab-btn-career" onclick="switchTab('career')">CAREER</button>
+      <button class="tab" id="tab-btn-leaderboard" onclick="switchTab('leaderboard')">LEADERBOARD</button>
     </div>
     <div id="tab-session">
     <div id="comp-bar">
@@ -1500,18 +1505,23 @@ backdrop-filter: blur(4px);
     <div id="tab-career" style="display:none">
       <div id="career-section"></div>
     </div>
+    <div id="tab-leaderboard" style="display:none">
+      <div id="lb-section"></div>
+    </div>
   </div>
 </div>
 
 <script>
 // ── Tab system ────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  document.getElementById('tab-session').style.display = name === 'session' ? '' : 'none';
-  document.getElementById('tab-career').style.display  = name === 'career'  ? '' : 'none';
+  document.getElementById('tab-session').style.display     = name === 'session'     ? '' : 'none';
+  document.getElementById('tab-career').style.display      = name === 'career'      ? '' : 'none';
+  document.getElementById('tab-leaderboard').style.display = name === 'leaderboard' ? '' : 'none';
   document.querySelectorAll('.tab').forEach(t =>
     t.classList.toggle('active', t.id === `tab-btn-${name}`)
   );
   if (name === 'career') loadCareer();
+  if (name === 'leaderboard') fetchLeaderboard();
 }
 
 // ── Career stats ──────────────────────────────────────────────────────────────
