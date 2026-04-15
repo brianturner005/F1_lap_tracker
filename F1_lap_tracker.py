@@ -809,9 +809,13 @@ def parse_final_classification_packet(data, player_idx):
         if len(data) < base + 1:
             return
         num_cars = struct.unpack_from("<B", data, base)[0]
-        if player_idx >= num_cars:
+        if player_idx >= num_cars or num_cars == 0:
             return
-        car_base = base + 1 + player_idx * FINAL_CLASS_SIZE
+        # Compute per-car size dynamically — guards against F1 25 spec changes
+        per_car = (len(data) - HEADER_SIZE - 1) // num_cars
+        if per_car < 20:
+            return
+        car_base = base + 1 + player_idx * per_car
         if len(data) < car_base + 20:
             return
         position      = struct.unpack_from("<B", data, car_base + 0)[0]
@@ -1567,14 +1571,14 @@ backdrop-filter: blur(4px);
         </div>
       </div>
     </div>
-    <div class="below-grid">
-      <div id="pbs-section"></div>
-      <div id="sessions-section"></div>
-    </div>
     <div id="debrief-section"></div>
     </div><!-- end tab-session -->
     <div id="tab-career" style="display:none">
       <div id="career-section"></div>
+      <div class="below-grid" style="margin-top:12px">
+        <div id="pbs-section"></div>
+        <div id="sessions-section"></div>
+      </div>
     </div>
     <div id="tab-leaderboard" style="display:none">
       <div id="lb-section"></div>
@@ -2073,42 +2077,43 @@ function renderTyreDiagram(d) {
     ? `<div style="text-align:center;font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-top:4px">${d.tyre_age_laps} LAP${d.tyre_age_laps !== 1 ? 'S' : ''} ON SET</div>`
     : '';
   // Inline SVG top-down F1 car — tyres at all four corners
-  const svg = `<svg viewBox="0 0 160 210" width="160" height="210" style="display:block;margin:0 auto">
+  // Wider tyre blocks with bigger text for easy readability
+  const svg = `<svg viewBox="0 0 220 250" width="100%" style="display:block;max-width:280px;margin:0 auto">
     <!-- rear wing -->
-    <rect x="18" y="175" width="124" height="8" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+    <rect x="22" y="210" width="176" height="10" rx="4" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
     <!-- rear diffuser -->
-    <rect x="42" y="166" width="76" height="10" rx="2" fill="rgba(255,255,255,.05)"/>
+    <rect x="54" y="200" width="112" height="12" rx="3" fill="rgba(255,255,255,.06)"/>
     <!-- car body -->
-    <rect x="42" y="32" width="76" height="135" rx="12" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.13)" stroke-width="1"/>
+    <rect x="54" y="40" width="112" height="162" rx="14" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
     <!-- sidepods -->
-    <rect x="32" y="70" width="20" height="55" rx="4" fill="rgba(255,255,255,.05)"/>
-    <rect x="108" y="70" width="20" height="55" rx="4" fill="rgba(255,255,255,.05)"/>
+    <rect x="40" y="88" width="26" height="68" rx="5" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+    <rect x="154" y="88" width="26" height="68" rx="5" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
     <!-- cockpit / halo -->
-    <ellipse cx="80" cy="105" rx="16" ry="28" fill="rgba(0,0,0,.55)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+    <ellipse cx="110" cy="128" rx="20" ry="34" fill="rgba(0,0,0,.6)" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
     <!-- front nose -->
-    <polygon points="60,32 100,32 92,12 68,12" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+    <polygon points="74,40 146,40 134,16 86,16" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.15)" stroke-width="1"/>
     <!-- front wing -->
-    <rect x="20" y="8" width="120" height="7" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+    <rect x="24" y="10" width="172" height="9" rx="4" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
 
     <!-- FL tyre -->
-    <rect x="4" y="26" width="26" height="54" rx="5" fill="${_twc(fl)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
-    <text x="17" y="51" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fl)}" font-size="9" font-weight="700" font-family="monospace">${pct(fl)}</text>
-    <text x="17" y="73" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">FL</text>
+    <rect x="2" y="32" width="36" height="68" rx="6" fill="${_twc(fl)}" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/>
+    <text x="20" y="60" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fl)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(fl)}</text>
+    <text x="20" y="91" text-anchor="middle" fill="rgba(255,255,255,.45)" font-size="9" font-family="monospace">FL</text>
 
     <!-- FR tyre -->
-    <rect x="130" y="26" width="26" height="54" rx="5" fill="${_twc(fr)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
-    <text x="143" y="51" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fr)}" font-size="9" font-weight="700" font-family="monospace">${pct(fr)}</text>
-    <text x="143" y="73" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">FR</text>
+    <rect x="182" y="32" width="36" height="68" rx="6" fill="${_twc(fr)}" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/>
+    <text x="200" y="60" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fr)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(fr)}</text>
+    <text x="200" y="91" text-anchor="middle" fill="rgba(255,255,255,.45)" font-size="9" font-family="monospace">FR</text>
 
     <!-- RL tyre -->
-    <rect x="4" y="118" width="26" height="60" rx="5" fill="${_twc(rl)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
-    <text x="17" y="147" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rl)}" font-size="9" font-weight="700" font-family="monospace">${pct(rl)}</text>
-    <text x="17" y="170" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">RL</text>
+    <rect x="2" y="140" width="36" height="76" rx="6" fill="${_twc(rl)}" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/>
+    <text x="20" y="172" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rl)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(rl)}</text>
+    <text x="20" y="205" text-anchor="middle" fill="rgba(255,255,255,.45)" font-size="9" font-family="monospace">RL</text>
 
     <!-- RR tyre -->
-    <rect x="130" y="118" width="26" height="60" rx="5" fill="${_twc(rr)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
-    <text x="143" y="147" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rr)}" font-size="9" font-weight="700" font-family="monospace">${pct(rr)}</text>
-    <text x="143" y="170" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">RR</text>
+    <rect x="182" y="140" width="36" height="76" rx="6" fill="${_twc(rr)}" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/>
+    <text x="200" y="172" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rr)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(rr)}</text>
+    <text x="200" y="205" text-anchor="middle" fill="rgba(255,255,255,.45)" font-size="9" font-family="monospace">RR</text>
   </svg>`;
   return `<div class="panel">
     <div class="panel-title">Tyre Wear</div>
@@ -2842,13 +2847,6 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
 
-        elif parsed.path == "/api/lb-refresh":
-            # Kick off a fresh leaderboard fetch in background and return cached data
-            threading.Thread(target=_lb_refresh, daemon=True).start()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"ok":true}')
 
         elif parsed.path == "/api/motion":
             with state_lock:
@@ -2929,7 +2927,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/clear":
+        if parsed.path == "/api/lb-refresh":
+            threading.Thread(target=_lb_refresh, daemon=True).start()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+        elif parsed.path == "/api/clear":
             old_session_id = None
             with state_lock:
                 old_session_id = state["current_session_id"]
