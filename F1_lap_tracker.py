@@ -764,15 +764,25 @@ def parse_car_status_packet(data, player_idx):
 # Packet ID 10 – Car Damage Data
 def parse_car_damage_packet(data, player_idx):
     try:
-        base = HEADER_SIZE + player_idx * CAR_DAMAGE_SIZE
+        # Compute per-car size from packet length rather than using a hardcoded
+        # constant — guards against F1 25 spec changes between game versions.
+        body_len = len(data) - HEADER_SIZE
+        if body_len < 20:
+            return
+        per_car = body_len // 22   # always 22 cars in the array
+        if per_car < 20:
+            return
+        base = HEADER_SIZE + player_idx * per_car
         if len(data) < base + 20:
             return
         # +0  tyresWear[4]   4 × float  (RL, RR, FL, FR)
         # +16 tyresDamage[4] 4 × uint8  (RL, RR, FL, FR)
         wear   = struct.unpack_from("<4f", data, base +  0)
         damage = struct.unpack_from("<4B", data, base + 16)
+        # Clamp to valid range; reject obviously wrong values from bad offsets
+        valid = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
         with state_lock:
-            state["tyre_wear"]   = [round(w, 1) for w in wear]
+            state["tyre_wear"]   = valid
             state["tyre_damage"] = list(damage)
     except Exception:
         pass
@@ -817,7 +827,10 @@ def parse_final_classification_packet(data, player_idx):
         # DNF, DSQ, N/C, or Retired. Ignore Invalid/Inactive/Active packets
         # which the game sends during formation lap and mid-race.
         FINAL_STATUSES = {3, 4, 5, 6, 7}  # Finished, DNF, DSQ, N/C, Retired
+        print(f"[Final Classification] raw: status={result_status} pos={position} "
+              f"laps={num_laps} best={best_lap_str}")
         if result_status not in FINAL_STATUSES:
+            print(f"[Final Classification] ignored — status {result_status} not final")
             return
 
         RACE_SESSION_TYPES = {"Race", "Race 2", "Race 3"}
@@ -859,11 +872,13 @@ def parse_final_classification_packet(data, player_idx):
         db_save_race_result(sid, track, sess_type, position, grid_pos, points,
                             num_laps, result_status, best_lap_ms, best_lap_str,
                             total_time_s, fastest)
+        print(f"[Final Classification] saved — pos={position} pts={points} "
+              f"track='{track}' sess='{sess_type}'")
         stats = db_get_career_stats()
         with state_lock:
             state["career_stats"] = stats
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[Final Classification] ERROR: {exc}")
 
 # ── Community leaderboard ─────────────────────────────────────────────────────
 
@@ -903,8 +918,17 @@ def _lb_refresh():
             track        = state["session"].get("track", "Unknown")
             session_type = state["session"].get("session_type", "Unknown")
             player_id    = state.get("player_id") or ""
-        if track in ("Unknown", None):
-            return
+        if track in ("Unknown", None, ""):
+            # No active session — fall back to the most recently driven track
+            con = sqlite3.connect(DB_PATH)
+            row = con.execute(
+                "SELECT track, session_type FROM personal_bests "
+                "ORDER BY set_at DESC LIMIT 1"
+            ).fetchone()
+            con.close()
+            if not row:
+                return
+            track, session_type = row[0], row[1]
         url = (f"{LEADERBOARD_URL}/api/leaderboard"
                f"/{quote(track, safe='')}/{quote(session_type, safe='')}"
                f"?player_id={player_id}")
@@ -1361,12 +1385,7 @@ td.finish-bronze { color:#cd7f32; font-weight:700; }
 .toast.best   { border-color:var(--green);  color:var(--green);  }
 
 /* Tyre wear diagram */
-.tyre-diagram { display:flex; flex-direction:column; align-items:center; gap:6px; padding:6px 0 2px; }
-.tyre-axle { display:flex; align-items:center; gap:10px; }
-.tyre-car-body { width:52px; height:30px; background:rgba(255,255,255,.05); border:1px solid var(--border); border-radius:5px; }
-.tyre-block { width:30px; height:50px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:.58rem; font-weight:700; font-family:'Orbitron',sans-serif; transition:background-color .8s; }
-.tyre-corner-label { font-size:.5rem; letter-spacing:.08em; color:var(--muted); text-align:center; width:30px; }
-.tyre-row-labels { display:flex; align-items:center; gap:10px; }
+.tyre-svg-wrap { display:flex; flex-direction:column; align-items:center; padding:6px 0 4px; }
 
 /* Lap comparison */
 .comp-cell { white-space:nowrap; }
@@ -1678,7 +1697,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function fetchLeaderboard() {
+  // Show a loading state while we fetch
+  const el = document.getElementById('lb-section');
+  if (el && (!el.innerHTML || el.innerHTML.includes('Waiting'))) {
+    el.innerHTML = `<div class="panel lb-wrap">
+      <div class="panel-title">Community Leaderboard</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0 0">Loading…</p></div>`;
+  }
   try {
+    // Trigger a fresh backend fetch, then wait for it to complete
+    await fetch('/api/lb-refresh', { method: 'POST' });
+    await new Promise(r => setTimeout(r, 1800));
     const r = await fetch('/api/leaderboard');
     const d = await r.json();
     renderLeaderboard(d);
@@ -2023,49 +2052,67 @@ function compoundPill(c) {
 }
 
 // ── Tyre wear diagram ─────────────────────────────────────────────────────────
-function _tyreWearColor(w) {
-  if (w === null || w === undefined) return 'rgba(255,255,255,.06)';
-  if (w < 25) return '#00d68f';   // green  — new/good
-  if (w < 50) return '#ffd700';   // gold   — some wear
-  if (w < 75) return '#ff8c00';   // orange — heavy wear
-  return '#e10600';               // red    — critical
+function _twc(w) {  // tyre wear colour
+  if (w === null || w === undefined) return '#1e1e1e';
+  if (w < 25) return '#00d68f';
+  if (w < 50) return '#ffd700';
+  if (w < 75) return '#ff8c00';
+  return '#e10600';
 }
-function _tyreTextColor(w) {
-  if (w === null || w === undefined) return '#666';
+function _twt(w) {  // tyre text colour
+  if (w === null || w === undefined) return '#444';
   return w < 50 ? '#000' : '#fff';
 }
 
 function renderTyreDiagram(d) {
   const wear = d.tyre_wear || [null, null, null, null]; // [RL, RR, FL, FR]
-  // Skip panel entirely if no data received yet
   if (wear.every(v => v === null)) return '';
   const fl = wear[2], fr = wear[3], rl = wear[0], rr = wear[1];
+  const pct = v => v !== null ? Math.round(v) + '%' : '—';
   const age = d.tyre_age_laps != null
-    ? `<div style="font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-top:2px">${d.tyre_age_laps} LAP${d.tyre_age_laps !== 1 ? 'S' : ''} ON SET</div>`
+    ? `<div style="text-align:center;font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-top:4px">${d.tyre_age_laps} LAP${d.tyre_age_laps !== 1 ? 'S' : ''} ON SET</div>`
     : '';
-  function tyre(w) {
-    const bg  = _tyreWearColor(w);
-    const col = _tyreTextColor(w);
-    const txt = w !== null ? Math.round(w) + '%' : '—';
-    return `<div class="tyre-block" style="background:${bg};color:${col}">${txt}</div>`;
-  }
+  // Inline SVG top-down F1 car — tyres at all four corners
+  const svg = `<svg viewBox="0 0 160 210" width="160" height="210" style="display:block;margin:0 auto">
+    <!-- rear wing -->
+    <rect x="18" y="175" width="124" height="8" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+    <!-- rear diffuser -->
+    <rect x="42" y="166" width="76" height="10" rx="2" fill="rgba(255,255,255,.05)"/>
+    <!-- car body -->
+    <rect x="42" y="32" width="76" height="135" rx="12" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.13)" stroke-width="1"/>
+    <!-- sidepods -->
+    <rect x="32" y="70" width="20" height="55" rx="4" fill="rgba(255,255,255,.05)"/>
+    <rect x="108" y="70" width="20" height="55" rx="4" fill="rgba(255,255,255,.05)"/>
+    <!-- cockpit / halo -->
+    <ellipse cx="80" cy="105" rx="16" ry="28" fill="rgba(0,0,0,.55)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+    <!-- front nose -->
+    <polygon points="60,32 100,32 92,12 68,12" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+    <!-- front wing -->
+    <rect x="20" y="8" width="120" height="7" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+
+    <!-- FL tyre -->
+    <rect x="4" y="26" width="26" height="54" rx="5" fill="${_twc(fl)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
+    <text x="17" y="51" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fl)}" font-size="9" font-weight="700" font-family="monospace">${pct(fl)}</text>
+    <text x="17" y="73" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">FL</text>
+
+    <!-- FR tyre -->
+    <rect x="130" y="26" width="26" height="54" rx="5" fill="${_twc(fr)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
+    <text x="143" y="51" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fr)}" font-size="9" font-weight="700" font-family="monospace">${pct(fr)}</text>
+    <text x="143" y="73" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">FR</text>
+
+    <!-- RL tyre -->
+    <rect x="4" y="118" width="26" height="60" rx="5" fill="${_twc(rl)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
+    <text x="17" y="147" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rl)}" font-size="9" font-weight="700" font-family="monospace">${pct(rl)}</text>
+    <text x="17" y="170" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">RL</text>
+
+    <!-- RR tyre -->
+    <rect x="130" y="118" width="26" height="60" rx="5" fill="${_twc(rr)}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
+    <text x="143" y="147" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rr)}" font-size="9" font-weight="700" font-family="monospace">${pct(rr)}</text>
+    <text x="143" y="170" text-anchor="middle" fill="#555" font-size="7" font-family="monospace">RR</text>
+  </svg>`;
   return `<div class="panel">
     <div class="panel-title">Tyre Wear</div>
-    <div class="tyre-diagram">
-      <div class="tyre-row-labels">
-        <span class="tyre-corner-label">FL</span>
-        <span style="width:52px"></span>
-        <span class="tyre-corner-label">FR</span>
-      </div>
-      <div class="tyre-axle">${tyre(fl)}<div class="tyre-car-body"></div>${tyre(fr)}</div>
-      <div class="tyre-axle">${tyre(rl)}<div class="tyre-car-body"></div>${tyre(rr)}</div>
-      <div class="tyre-row-labels">
-        <span class="tyre-corner-label">RL</span>
-        <span style="width:52px"></span>
-        <span class="tyre-corner-label">RR</span>
-      </div>
-      ${age}
-    </div>
+    <div class="tyre-svg-wrap">${svg}${age}</div>
   </div>`;
 }
 
@@ -2794,6 +2841,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", len(payload))
             self.end_headers()
             self.wfile.write(payload)
+
+        elif parsed.path == "/api/lb-refresh":
+            # Kick off a fresh leaderboard fetch in background and return cached data
+            threading.Thread(target=_lb_refresh, daemon=True).start()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
 
         elif parsed.path == "/api/motion":
             with state_lock:
