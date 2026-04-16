@@ -1806,20 +1806,19 @@ function _buildSessTypeDropdown() {
   const types = [...new Set(
     _lbPbs.filter(pb => pb.track === _lbTrack).map(pb => pb.session_type)
   )];
-  sessSelect.innerHTML = '<option value="">— Session Type —</option>';
+  sessSelect.innerHTML = '<option value="all">All Session Types</option>';
   for (const st of types) {
     const opt = document.createElement('option');
     opt.value = st;
     opt.textContent = st || 'Unknown';
     sessSelect.appendChild(opt);
   }
-  if (_lbSessionType && types.includes(_lbSessionType)) {
-    sessSelect.value = _lbSessionType;
-  } else if (types.length) {
-    _lbSessionType = types[0];
+  // Keep existing specific selection if still valid, otherwise default to "all"
+  if (_lbSessionType && _lbSessionType !== 'all' && types.includes(_lbSessionType)) {
     sessSelect.value = _lbSessionType;
   } else {
-    _lbSessionType = '';
+    _lbSessionType = 'all';
+    sessSelect.value = 'all';
   }
 }
 
@@ -1853,15 +1852,19 @@ function renderLbView() {
 
 function renderMyTimes() {
   const el = document.getElementById('lb-section');
-  if (!_lbTrack || !_lbSessionType) {
-    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track and session type above.</p></div>`;
+  if (!_lbTrack) {
+    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
     return;
   }
-  const hits = _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
+  const allTypes = _lbSessionType === 'all';
+  const hits = allTypes
+    ? _lbPbs.filter(p => p.track === _lbTrack)
+    : _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
+  const title = allTypes ? `My Times — ${esc(_lbTrack)}` : `My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}`;
   if (!hits.length) {
     el.innerHTML = `<div class="panel lb-wrap">
-      <div class="panel-title">My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}</div>
-      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">No times recorded yet for this combination.</p>
+      <div class="panel-title">${title}</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">No times recorded yet for this track.</p>
     </div>`;
     return;
   }
@@ -1870,15 +1873,17 @@ function renderMyTimes() {
     const setAt = pb.set_at ? pb.set_at.replace('T', ' ').substring(0, 16) : '—';
     rows += `<tr>
       <td class="lap-time" style="color:var(--purple)">${esc(pb.lap_time)}</td>
+      ${allTypes ? `<td style="color:var(--muted);font-size:.72rem">${esc(pb.session_type || '—')}</td>` : ''}
       <td>${compoundPill(pb.compound)}</td>
       <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
     </tr>`;
   }
+  const typeHeader = allTypes ? '<th>TYPE</th>' : '';
   el.innerHTML = `<div class="panel lb-wrap">
-    <div class="panel-title">My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}</div>
+    <div class="panel-title">${title}</div>
     <div class="lap-table-wrap">
       <table>
-        <thead><tr><th>TIME</th><th>TYRE</th><th>SET</th></tr></thead>
+        <thead><tr><th>TIME</th>${typeHeader}<th>TYRE</th><th>SET</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -1887,8 +1892,15 @@ function renderMyTimes() {
 
 async function renderCommunity() {
   const el = document.getElementById('lb-section');
-  if (!_lbTrack || !_lbSessionType) {
-    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track and session type above.</p></div>`;
+  if (!_lbTrack) {
+    el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
+    return;
+  }
+  if (_lbSessionType === 'all') {
+    el.innerHTML = `<div class="panel lb-wrap">
+      <div class="panel-title">Community — ${esc(_lbTrack)}</div>
+      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">Select a specific session type to view community times.</p>
+    </div>`;
     return;
   }
   el.innerHTML = `<div class="panel lb-wrap">
