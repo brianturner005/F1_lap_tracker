@@ -1083,52 +1083,52 @@ HTML = r"""<!DOCTYPE html>
   }
 
 /* ── Team themes ─────────────────────────────────────────────────────────── */
-body.theme-redbull {
+body.theme-cobalt {
   --red:#3671C6; --red-dim:#1e3a80; --header-tint:#030614;
   --logo-glow:rgba(54,113,198,.4);
   --bg:#060810; --panel:#0d1020; --border:#1e2540;
 }
-body.theme-ferrari {
+body.theme-scarlet {
   --red:#e8002d; --red-dim:#9c001e; --header-tint:#0d0005;
   --logo-glow:rgba(232,0,45,.4);
   --bg:#0d0606; --panel:#160a0a; --border:#2e1414;
 }
-body.theme-mercedes {
+body.theme-teal {
   --red:#00d2be; --red-dim:#008c7e; --header-tint:#030d0c;
   --logo-glow:rgba(0,210,190,.4);
   --bg:#060d0c; --panel:#0c1614; --border:#1c3330;
 }
-body.theme-mclaren {
+body.theme-papaya {
   --red:#ff8000; --red-dim:#b35a00; --header-tint:#0d0700;
   --logo-glow:rgba(255,128,0,.4);
   --bg:#0d0800; --panel:#161008; --border:#301e08;
 }
-body.theme-aston {
+body.theme-emerald {
   --red:#00e060; --red-dim:#007a38; --header-tint:#020d06;
   --logo-glow:rgba(0,224,96,.4);
   --bg:#050d07; --panel:#0a140c; --border:#162a1a;
 }
-body.theme-alpine {
+body.theme-cerulean {
   --red:#0093cc; --red-dim:#005e85; --header-tint:#02080f;
   --logo-glow:rgba(0,147,204,.4);
   --bg:#060a10; --panel:#0c1220; --border:#1c2840;
 }
-body.theme-williams {
+body.theme-sky {
   --red:#37bedd; --red-dim:#1a7a94; --header-tint:#020d10;
   --logo-glow:rgba(55,190,221,.4);
   --bg:#060c10; --panel:#0c1520; --border:#1c3040;
 }
-body.theme-racingbulls {
+body.theme-iris {
   --red:#6692ff; --red-dim:#2244cc; --header-tint:#04061a;
   --logo-glow:rgba(102,146,255,.4);
   --bg:#070810; --panel:#0f1125; --border:#202545;
 }
-body.theme-sauber {
+body.theme-lime {
   --red:#52e252; --red-dim:#2a8c2a; --header-tint:#020d02;
   --logo-glow:rgba(82,226,82,.4);
   --bg:#050e05; --panel:#0a1609; --border:#163018;
 }
-body.theme-haas {
+body.theme-crimson {
   --red:#e8182a; --red-dim:#9e0a18; --header-tint:#0d0205;
   --logo-glow:rgba(232,24,42,.4);
   --bg:#0d0809; --panel:#1a1214; --border:#342428;
@@ -1535,16 +1535,16 @@ backdrop-filter: blur(4px);
   <div style="display:flex;align-items:center;gap:16px;">
     <select id="theme-select" class="theme-select" onchange="applyTheme(this.value)">
       <option value="">F1 DEFAULT</option>
-      <option value="redbull">RED BULL</option>
-      <option value="ferrari">FERRARI</option>
-      <option value="mercedes">MERCEDES</option>
-      <option value="mclaren">MCLAREN</option>
-      <option value="aston">ASTON MARTIN</option>
-      <option value="alpine">ALPINE</option>
-      <option value="williams">WILLIAMS</option>
-      <option value="racingbulls">RACING BULLS</option>
-      <option value="sauber">KICK SAUBER</option>
-      <option value="haas">HAAS</option>
+      <option value="cobalt">COBALT</option>
+      <option value="scarlet">SCARLET</option>
+      <option value="teal">TEAL</option>
+      <option value="papaya">PAPAYA</option>
+      <option value="emerald">EMERALD</option>
+      <option value="cerulean">CERULEAN</option>
+      <option value="sky">SKY</option>
+      <option value="iris">IRIS</option>
+      <option value="lime">LIME</option>
+      <option value="crimson">CRIMSON</option>
     </select>
     <div id="lb-controls" style="display:none;align-items:center;gap:8px;">
       <input id="lb-name" type="text" class="lb-input" placeholder="Display name" maxlength="32">
