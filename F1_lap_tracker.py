@@ -1771,8 +1771,11 @@ async function fetchLeaderboard() {
     _lbPbs = await r.json();
   } catch(e) { _lbPbs = []; }
 
-  // Drop records with no track name (incomplete sessions)
-  _lbPbs = _lbPbs.filter(pb => pb.track && pb.track !== 'Unknown');
+  // Drop records with no track or unknown/blank session type (incomplete sessions)
+  _lbPbs = _lbPbs.filter(pb =>
+    pb.track && pb.track !== 'Unknown' &&
+    pb.session_type && pb.session_type !== 'Unknown'
+  );
 
   // Most recently driven first
   _lbPbs.sort((a, b) => (b.set_at || '').localeCompare(a.set_at || ''));
@@ -3031,18 +3034,16 @@ class Handler(BaseHTTPRequestHandler):
             track_filter = qs.get("track", [None])[0]
             con = sqlite3.connect(DB_PATH)
             con.row_factory = sqlite3.Row
+            _valid = "track IS NOT NULL AND track != '' AND track != 'Unknown' " \
+                     "AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'"
             if track_filter:
                 rows = con.execute(
-                    "SELECT * FROM personal_bests "
-                    "WHERE track=? AND track != '' AND track != 'Unknown' "
-                    "ORDER BY session_type",
+                    f"SELECT * FROM personal_bests WHERE track=? AND {_valid} ORDER BY session_type",
                     (track_filter,)
                 ).fetchall()
             else:
                 rows = con.execute(
-                    "SELECT * FROM personal_bests "
-                    "WHERE track IS NOT NULL AND track != '' AND track != 'Unknown' "
-                    "ORDER BY track, session_type"
+                    f"SELECT * FROM personal_bests WHERE {_valid} ORDER BY track, session_type"
                 ).fetchall()
             con.close()
             pbs = [dict(r) for r in rows]
