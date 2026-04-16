@@ -1896,22 +1896,25 @@ async function renderCommunity() {
     el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
     return;
   }
-  if (!_lbSessionType || _lbSessionType === 'all') {
-    el.innerHTML = `<div class="panel lb-wrap">
-      <div class="panel-title">Community — ${esc(_lbTrack)}</div>
-      <p style="color:var(--muted);font-size:.75rem;margin:8px 0">Select a specific session type to view community times.</p>
-    </div>`;
-    return;
+  // When 'All' is selected, pick the first session type the user has a PB in
+  let sessType = _lbSessionType;
+  if (!sessType || sessType === 'all') {
+    const firstPb = _lbPbs.find(p => p.track === _lbTrack);
+    if (!firstPb) {
+      el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">No times recorded for this track.</p></div>`;
+      return;
+    }
+    sessType = firstPb.session_type;
   }
   el.innerHTML = `<div class="panel lb-wrap">
-    <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(_lbSessionType)}</div>
+    <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(sessType)}</div>
     <p style="color:var(--muted);font-size:.75rem;margin:8px 0">Loading…</p>
   </div>`;
   try {
     await fetch('/api/lb-refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ track: _lbTrack, session_type: _lbSessionType }),
+      body: JSON.stringify({ track: _lbTrack, session_type: sessType }),
     });
     await new Promise(r => setTimeout(r, 1800));
     const r = await fetch('/api/leaderboard');
