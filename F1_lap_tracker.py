@@ -1763,7 +1763,7 @@ document.addEventListener('DOMContentLoaded', () => {
 let _lbView        = 'mine';   // 'mine' | 'community'
 let _lbPbs         = [];       // all personal bests from DB
 let _lbTrack       = '';       // selected track name
-let _lbSessionType = '';       // selected session type
+let _lbSessionType = 'all';    // selected session type; 'all' = no filter
 
 async function fetchLeaderboard() {
   try {
@@ -1856,7 +1856,7 @@ function renderMyTimes() {
     el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
     return;
   }
-  const allTypes = _lbSessionType === 'all';
+  const allTypes = !_lbSessionType || _lbSessionType === 'all';
   const hits = allTypes
     ? _lbPbs.filter(p => p.track === _lbTrack)
     : _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
@@ -1896,7 +1896,7 @@ async function renderCommunity() {
     el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
     return;
   }
-  if (_lbSessionType === 'all') {
+  if (!_lbSessionType || _lbSessionType === 'all') {
     el.innerHTML = `<div class="panel lb-wrap">
       <div class="panel-title">Community — ${esc(_lbTrack)}</div>
       <p style="color:var(--muted);font-size:.75rem;margin:8px 0">Select a specific session type to view community times.</p>
