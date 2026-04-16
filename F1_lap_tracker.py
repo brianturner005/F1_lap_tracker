@@ -1857,19 +1857,23 @@ function renderMyTimes() {
     return;
   }
   const allTypes = !_lbSessionType || _lbSessionType === 'all';
-  let hits;
+  // For "All" fetch from the backend so SQLite handles track matching
   if (allTypes) {
-    // Build from the dropdown options we know work individually
-    const sessOpts = [...document.getElementById('lb-sesstype-select').options]
-      .filter(o => o.value && o.value !== 'all')
-      .map(o => o.value);
-    hits = sessOpts
-      .map(st => _lbPbs.find(p => p.track === _lbTrack && p.session_type === st))
-      .filter(Boolean);
-  } else {
-    hits = _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
+    fetch('/api/pbs?track=' + encodeURIComponent(_lbTrack))
+      .then(r => r.json())
+      .then(hits => _renderMyTimesRows(hits, true))
+      .catch(() => {});
+    return;
   }
-  const title = allTypes ? `My Times — ${esc(_lbTrack)}` : `My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}`;
+  const hits = _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
+  _renderMyTimesRows(hits, false);
+}
+
+function _renderMyTimesRows(hits, showTypeCol) {
+  const el = document.getElementById('lb-section');
+  const title = showTypeCol
+    ? `My Times — ${esc(_lbTrack)}`
+    : `My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}`;
   if (!hits.length) {
     el.innerHTML = `<div class="panel lb-wrap">
       <div class="panel-title">${title}</div>
@@ -1882,12 +1886,12 @@ function renderMyTimes() {
     const setAt = pb.set_at ? pb.set_at.replace('T', ' ').substring(0, 16) : '—';
     rows += `<tr>
       <td class="lap-time" style="color:var(--purple)">${esc(pb.lap_time)}</td>
-      ${allTypes ? `<td style="color:var(--muted);font-size:.72rem">${esc(pb.session_type || '—')}</td>` : ''}
+      ${showTypeCol ? `<td style="color:var(--muted);font-size:.72rem">${esc(pb.session_type || '—')}</td>` : ''}
       <td>${compoundPill(pb.compound)}</td>
       <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
     </tr>`;
   }
-  const typeHeader = allTypes ? '<th>TYPE</th>' : '';
+  const typeHeader = showTypeCol ? '<th>TYPE</th>' : '';
   el.innerHTML = `<div class="panel lb-wrap">
     <div class="panel-title">${title}</div>
     <div class="lap-table-wrap">
@@ -3020,7 +3024,19 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
 
         elif parsed.path == "/api/pbs":
-            pbs = db_get_all_pbs()
+            qs = parse_qs(parsed.query)
+            track_filter = qs.get("track", [None])[0]
+            if track_filter:
+                con = sqlite3.connect(DB_PATH)
+                con.row_factory = sqlite3.Row
+                rows = con.execute(
+                    "SELECT * FROM personal_bests WHERE track=? ORDER BY session_type",
+                    (track_filter,)
+                ).fetchall()
+                con.close()
+                pbs = [dict(r) for r in rows]
+            else:
+                pbs = db_get_all_pbs()
             payload = json.dumps(pbs).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
