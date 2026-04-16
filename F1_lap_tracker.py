@@ -1857,9 +1857,18 @@ function renderMyTimes() {
     return;
   }
   const allTypes = !_lbSessionType || _lbSessionType === 'all';
-  const hits = allTypes
-    ? _lbPbs.filter(p => p.track === _lbTrack)
-    : _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
+  let hits;
+  if (allTypes) {
+    // Build from the dropdown options we know work individually
+    const sessOpts = [...document.getElementById('lb-sesstype-select').options]
+      .filter(o => o.value && o.value !== 'all')
+      .map(o => o.value);
+    hits = sessOpts
+      .map(st => _lbPbs.find(p => p.track === _lbTrack && p.session_type === st))
+      .filter(Boolean);
+  } else {
+    hits = _lbPbs.filter(p => p.track === _lbTrack && p.session_type === _lbSessionType);
+  }
   const title = allTypes ? `My Times — ${esc(_lbTrack)}` : `My Times — ${esc(_lbTrack)} · ${esc(_lbSessionType)}`;
   if (!hits.length) {
     el.innerHTML = `<div class="panel lb-wrap">
