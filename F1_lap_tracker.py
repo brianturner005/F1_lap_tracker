@@ -1771,6 +1771,9 @@ async function fetchLeaderboard() {
     _lbPbs = await r.json();
   } catch(e) { _lbPbs = []; }
 
+  // Drop records with no track name (incomplete sessions)
+  _lbPbs = _lbPbs.filter(pb => pb.track && pb.track !== 'Unknown');
+
   // Most recently driven first
   _lbPbs.sort((a, b) => (b.set_at || '').localeCompare(a.set_at || ''));
 
@@ -3026,17 +3029,23 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/pbs":
             qs = parse_qs(parsed.query)
             track_filter = qs.get("track", [None])[0]
+            con = sqlite3.connect(DB_PATH)
+            con.row_factory = sqlite3.Row
             if track_filter:
-                con = sqlite3.connect(DB_PATH)
-                con.row_factory = sqlite3.Row
                 rows = con.execute(
-                    "SELECT * FROM personal_bests WHERE track=? ORDER BY session_type",
+                    "SELECT * FROM personal_bests "
+                    "WHERE track=? AND track != '' AND track != 'Unknown' "
+                    "ORDER BY session_type",
                     (track_filter,)
                 ).fetchall()
-                con.close()
-                pbs = [dict(r) for r in rows]
             else:
-                pbs = db_get_all_pbs()
+                rows = con.execute(
+                    "SELECT * FROM personal_bests "
+                    "WHERE track IS NOT NULL AND track != '' AND track != 'Unknown' "
+                    "ORDER BY track, session_type"
+                ).fetchall()
+            con.close()
+            pbs = [dict(r) for r in rows]
             payload = json.dumps(pbs).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
