@@ -131,6 +131,22 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
   }
 }
 
+resource displayNamesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-02-15-preview' = {
+  parent: cosmosDatabase
+  name: 'display_names'
+  properties: {
+    resource: {
+      id: 'display_names'
+      partitionKey: {
+        paths: [
+          '/id'
+        ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // App Service Plan — Basic B1, Linux (dedicated; avoids Dynamic VM quota)
 // ---------------------------------------------------------------------------
