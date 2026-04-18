@@ -277,3 +277,11 @@ If you want to host a private leaderboard for your own group, see [HOSTING.md](H
 - This app is built for **F1 25** but is compatible with F1 2023 and F1 2024 using the same UDP format.
 - Console versions (PlayStation, Xbox) can also broadcast telemetry to a PC on the same network — set the UDP IP to your PC's local IP instead of `127.0.0.1` and ensure both devices are on the same network.
 - No lap or session data is sent externally unless you enable the leaderboard opt-in toggle. The AI debrief sends only session metadata and lap times (no personal information) to the shared backend.
+
+-----
+
+## Disclaimer
+
+Pitwall IQ is an independent fan project and is **not affiliated with, endorsed by, or associated with Formula 1, Formula One Management Ltd (FOM), the FIA, Electronic Arts Inc. (EA), Codemasters, or any F1 team or driver.** F1, Formula 1, and related marks are trademarks of their respective owners.
+
+This software is provided "as is" without warranty of any kind. See [TERMS.md](TERMS.md) for full terms of use and privacy information.
