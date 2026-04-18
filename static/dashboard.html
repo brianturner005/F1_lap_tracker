@@ -1017,6 +1017,7 @@ async function fetchState() {
     const d = await r.json();
     lastData = d;
     render(d);
+    if (d.lb_error) showToast('⚠️  ' + d.lb_error, 'info', 6000);
   } catch(e) {}
 }
 

@@ -86,6 +86,7 @@ state = {
     "player_id": None,
     "leaderboard": None,       # cached community leaderboard response
     "leaderboard_enabled": False,  # True when LEADERBOARD_URL is set
+    "lb_error": None,              # set when the server rejects a submission
     "udp_connected": False,
     "player_position": 0,
     "total_laps": 0,
@@ -916,12 +917,15 @@ def _lb_post(payload, background=True):
                        method="POST")
             with urlopen(req, timeout=10) as resp:
                 result = json.loads(resp.read())
-                if result.get("rank"):
-                    with state_lock:
-                        lb = state.get("leaderboard") or {}
-                        lb["player_rank"] = result["rank"]
-                        state["leaderboard"] = lb
-                return result
+            if result.get("rank"):
+                with state_lock:
+                    lb = state.get("leaderboard") or {}
+                    lb["player_rank"] = result["rank"]
+                    state["leaderboard"] = lb
+            if not result.get("ok") and result.get("error"):
+                with state_lock:
+                    state["lb_error"] = result["error"]
+            return result
         except urllib.error.URLError as exc:
             log.debug("lb-submit URLError: %s", exc)
             _warn_backend_unreachable("Leaderboard")
@@ -1075,6 +1079,7 @@ def udp_listener():
 # Dashboard HTML is served from static/dashboard.html
 
 
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass  # silence request logs
 
@@ -1119,6 +1124,7 @@ class Handler(BaseHTTPRequestHandler):
                 track_name = state["session"].get("track", "")
                 out = dict(state)
                 out["track_svg"] = TRACK_SVG.get(track_name)
+                state["lb_error"] = None  # clear after delivering to client
                 payload = json.dumps(out).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

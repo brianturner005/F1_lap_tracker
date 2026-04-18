@@ -1,2 +1,3 @@
 azure-functions
 azure-cosmos
+better-profanity==0.7.0

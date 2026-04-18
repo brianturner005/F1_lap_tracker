@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 import azure.functions as func
 from azure.cosmos import CosmosClient, PartitionKey
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
+from better_profanity import profanity as _profanity
+
+_profanity.load_censor_words()
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -26,6 +29,7 @@ CORS_HEADERS = {
 DB_NAME = "f1tracker"
 LEADERBOARD_CONTAINER = "leaderboard"
 DEBRIEF_USAGE_CONTAINER = "debrief_usage"
+DISPLAY_NAMES_CONTAINER = "display_names"
 DAILY_DEBRIEF_LIMIT = 10
 DAILY_IP_DEBRIEF_LIMIT = 20   # higher limit per IP to allow shared networks
 
@@ -66,6 +70,45 @@ def _ms_to_laptime(ms) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Display-name helpers
+# ---------------------------------------------------------------------------
+
+def _normalize_name(name: str) -> str:
+    """Lowercase + collapse whitespace — used as the uniqueness key."""
+    return " ".join(name.lower().split())
+
+
+def _check_and_register_name(display_name: str, player_id: str):
+    """Return an error string if the name is taken, otherwise register it.
+
+    Returns None on success, an error message string on conflict.
+    The display_names container may not exist on older deployments;
+    skip the check gracefully in that case.
+    """
+    normalized = _normalize_name(display_name)
+    try:
+        container = _get_container(DISPLAY_NAMES_CONTAINER)
+        try:
+            doc = container.read_item(item=normalized, partition_key=normalized)
+            if doc.get("player_id") != player_id:
+                return (
+                    f'The display name "{display_name}" is already taken. '
+                    "Please choose a different name."
+                )
+        except CosmosResourceNotFoundError:
+            container.upsert_item({
+                "id": normalized,
+                "player_id": player_id,
+                "display_name": display_name,
+            })
+    except Exception:
+        # Container missing or other infra issue — skip uniqueness check
+        # rather than blocking all submissions.
+        logger.warning("display_names container unavailable; skipping uniqueness check")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # POST /api/lb-submit  (anonymous proxy — key stays server-side)
 # POST /api/submit     (kept for backwards compat, requires function key)
 # ---------------------------------------------------------------------------
@@ -94,6 +137,11 @@ def _handle_submit(body) -> func.HttpResponse:
         return _error("display_name must be between 1 and 32 characters.")
     if not all(c.isprintable() for c in display_name):
         return _error("display_name contains invalid characters.")
+    if _profanity.contains_profanity(display_name):
+        return _error("That display name isn't allowed. Please choose a different name.")
+    name_conflict = _check_and_register_name(display_name, player_id)
+    if name_conflict:
+        return _error(name_conflict)
     if not track or len(track) > 60:
         return _error("track must be between 1 and 60 characters.")
     if not session_type or len(session_type) > 30:
