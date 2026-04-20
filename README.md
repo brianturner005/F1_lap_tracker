@@ -136,6 +136,7 @@ Shows your lap history and comparison tools for the current session.
 
 Click any row in the lap table to load that lap's full telemetry directly below the table (speed, throttle & brake, gear, steering, and G-force). The selected row is highlighted. Click the same row again or press **✕ CLOSE** to dismiss.
 
+
 #### Lap comparison
 
 Click **A** or **B** next to any lap to assign it to a comparison slot. The comparison bar shows both laps and the RACE tab telemetry switches to overlay mode across all charts. Click **CLEAR** to exit.
