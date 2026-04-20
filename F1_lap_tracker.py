@@ -1423,8 +1423,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", len(out))
                 self.end_headers()
                 self.wfile.write(out)
-            except urllib.error.URLError:
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                log.warning("AI debrief HTTP %s: %s", exc.code, body)
+                try:
+                    msg = json.loads(body).get("error") or body
+                except Exception:
+                    msg = body or f"HTTP {exc.code}"
+                err = json.dumps({"error": msg}).encode()
+                self.send_response(exc.code if exc.code in (400, 429) else 500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(err))
+                self.end_headers()
+                self.wfile.write(err)
+            except urllib.error.URLError as exc:
                 _warn_backend_unreachable("AI Debrief")
+                log.warning("AI debrief URLError: %s", exc)
                 err = json.dumps({"error": "AI debrief backend is currently unreachable. Please try again later."}).encode()
                 self.send_response(503)
                 self.send_header("Content-Type", "application/json")
