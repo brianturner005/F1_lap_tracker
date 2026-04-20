@@ -1358,16 +1358,23 @@ function _twt(w) {  // tyre text colour (unused but kept for compat)
 }
 
 function renderTyreDiagram(d) {
-  const wear   = d.tyre_wear   || [null, null, null, null]; // [RL, RR, FL, FR]
-  const damage = d.tyre_damage || [null, null, null, null]; // [RL, RR, FL, FR]
+  const wear   = d.tyre_wear         || [null, null, null, null]; // [RL, RR, FL, FR]
+  const damage = d.tyre_damage       || [null, null, null, null]; // [RL, RR, FL, FR]
+  const fwd    = d.front_wing_damage || [null, null];             // [left, right]
   if (wear.every(v => v === null) && damage.every(v => v === null)) return '';
   const fl = wear[2],   fr = wear[3],   rl = wear[0],   rr = wear[1];
-  const dfl = damage[2], dfr = damage[3], drl = damage[0], drr = damage[1];
-  const hasDamage = damage.some(v => v !== null && v >= 10);
+  const dfl = damage[2] || 0, dfr = damage[3] || 0, drl = damage[0] || 0, drr = damage[1] || 0;
+  const fwL = fwd[0] || 0, fwR = fwd[1] || 0;
+  const hasDamage = [dfl,dfr,drl,drr,fwL,fwR].some(v => v >= 10);
+  // Damage overlay: semi-transparent red fill, opacity = damage/100 * 0.65
+  const dmgFill = v => `rgba(225,6,0,${Math.min(v / 100 * 0.70, 0.70).toFixed(2)})`;
+  // Front wing panel fill: blend damage red into the base panel colour
+  const wingFill = v => v >= 10
+    ? `rgba(225,6,0,${Math.min(v / 100 * 0.55, 0.55).toFixed(2)})`
+    : 'rgba(255,255,255,.11)';
   const age = d.tyre_age_laps != null
     ? `<div style="text-align:center;font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-top:2px">${d.tyre_age_laps} LAP${d.tyre_age_laps !== 1 ? 'S' : ''} ON SET</div>`
     : '';
-  // Legend: wear swatches + damage indicator if relevant
   const legend = `<div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:5px;flex-wrap:wrap;">
     <span style="font-size:.5rem;color:var(--muted);letter-spacing:.05em;">WEAR</span>
     <span style="display:inline-flex;gap:2px;">
@@ -1376,8 +1383,7 @@ function renderTyreDiagram(d) {
       <span style="width:8px;height:8px;background:#ff8c00;border-radius:2px;display:inline-block;"></span>
       <span style="width:8px;height:8px;background:#e10600;border-radius:2px;display:inline-block;"></span>
     </span>
-    ${hasDamage ? `<span style="font-size:.5rem;color:var(--muted);letter-spacing:.05em;margin-left:4px;">DAMAGE</span>
-    <span style="width:10px;height:10px;border:2px solid #e10600;border-radius:2px;display:inline-block;"></span>` : ''}
+    ${hasDamage ? `<span style="font-size:.5rem;color:#e10600;letter-spacing:.05em;margin-left:6px;">▲ DAMAGE</span>` : ''}
   </div>`;
   const svg = `<svg viewBox="0 0 220 330" width="100%" style="display:block;max-width:200px;margin:0 auto">
 
@@ -1385,9 +1391,9 @@ function renderTyreDiagram(d) {
     <!-- Endplates -->
     <rect x="9"   y="2"  width="8"  height="20" rx="2" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
     <rect x="203" y="2"  width="8"  height="20" rx="2" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
-    <!-- Main plane (angled panels either side of nose strut) -->
-    <path d="M 17,16 L 100,26 L 100,20 L 17,8 Z"  fill="rgba(255,255,255,.11)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
-    <path d="M 203,16 L 120,26 L 120,20 L 203,8 Z" fill="rgba(255,255,255,.11)" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
+    <!-- Main plane (angled panels — tinted red when damaged) -->
+    <path d="M 17,16 L 100,26 L 100,20 L 17,8 Z"  fill="${wingFill(fwL)}" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
+    <path d="M 203,16 L 120,26 L 120,20 L 203,8 Z" fill="${wingFill(fwR)}" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
     <!-- Flap detail lines -->
     <line x1="18"  y1="19" x2="99"  y2="24" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
     <line x1="202" y1="19" x2="121" y2="24" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
@@ -1407,10 +1413,12 @@ function renderTyreDiagram(d) {
     <line x1="173" y1="86" x2="115" y2="74" stroke="rgba(255,255,255,.17)" stroke-width="1.2"/>
     <rect x="170"  y="73" width="8"  height="16" rx="1" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.14)" stroke-width="1"/>
 
-    <!-- ═══ FRONT TYRES ═══  fill=wear  stroke=damage -->
-    <rect x="13"  y="64" width="32" height="56" rx="8" fill="${_twc(fl)}" stroke="${_tdc(dfl)}" stroke-width="2.5"/>
+    <!-- ═══ FRONT TYRES ═══  base=wear fill, overlay=damage fill -->
+    <rect x="13"  y="64" width="32" height="56" rx="8" fill="${_twc(fl)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${dfl >= 5 ? `<rect x="13" y="64" width="32" height="56" rx="8" fill="${dmgFill(dfl)}"/>` : ''}
     <circle cx="29"  cy="92" r="4" fill="rgba(0,0,0,.35)"/>
-    <rect x="175" y="64" width="32" height="56" rx="8" fill="${_twc(fr)}" stroke="${_tdc(dfr)}" stroke-width="2.5"/>
+    <rect x="175" y="64" width="32" height="56" rx="8" fill="${_twc(fr)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${dfr >= 5 ? `<rect x="175" y="64" width="32" height="56" rx="8" fill="${dmgFill(dfr)}"/>` : ''}
     <circle cx="191" cy="92" r="4" fill="rgba(0,0,0,.35)"/>
 
     <!-- ═══ MAIN BODY ═══ -->
@@ -1454,9 +1462,11 @@ function renderTyreDiagram(d) {
     <line x1="169" y1="262" x2="147" y2="258" stroke="rgba(255,255,255,.14)" stroke-width="1.2"/>
 
     <!-- ═══ REAR TYRES (wider than front) ═══ -->
-    <rect x="9"   y="236" width="40" height="70" rx="9" fill="${_twc(rl)}" stroke="${_tdc(drl)}" stroke-width="2.5"/>
+    <rect x="9"   y="236" width="40" height="70" rx="9" fill="${_twc(rl)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${drl >= 5 ? `<rect x="9" y="236" width="40" height="70" rx="9" fill="${dmgFill(drl)}"/>` : ''}
     <circle cx="29"  cy="271" r="5" fill="rgba(0,0,0,.35)"/>
-    <rect x="171" y="236" width="40" height="70" rx="9" fill="${_twc(rr)}" stroke="${_tdc(drr)}" stroke-width="2.5"/>
+    <rect x="171" y="236" width="40" height="70" rx="9" fill="${_twc(rr)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${drr >= 5 ? `<rect x="171" y="236" width="40" height="70" rx="9" fill="${dmgFill(drr)}"/>` : ''}
     <circle cx="191" cy="271" r="5" fill="rgba(0,0,0,.35)"/>
 
     <!-- ═══ REAR DIFFUSER ═══ -->

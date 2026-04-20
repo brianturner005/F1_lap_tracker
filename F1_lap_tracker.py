@@ -108,9 +108,10 @@ state = {
     "race_result": None,               # populated when Final Classification packet (ID 8) arrives
     "player_fastest_lap": False,       # set True when FTLP event fires for the player
     "race_result_saved_sid": None,     # session ID for which race result was already saved
-    "tyre_wear":     [None, None, None, None],  # [RL, RR, FL, FR] float % from Car Damage packet
-    "tyre_damage":   [None, None, None, None],  # [RL, RR, FL, FR] uint8 % structural damage
-    "tyre_age_laps": None,                      # laps on current tyre set (from Car Status)
+    "tyre_wear":         [None, None, None, None],  # [RL, RR, FL, FR] float % from Car Damage packet
+    "tyre_damage":       [None, None, None, None],  # [RL, RR, FL, FR] uint8 % structural damage
+    "front_wing_damage": [None, None],              # [left, right] uint8 % front wing damage
+    "tyre_age_laps":     None,                      # laps on current tyre set (from Car Status)
 }
 
 TRACK_IDS = {
@@ -805,15 +806,20 @@ def parse_car_damage_packet(data, player_idx):
         base = HEADER_SIZE + player_idx * per_car
         if len(data) < base + 20:
             return
-        # +0  tyresWear[4]   4 × float  (RL, RR, FL, FR)
-        # +16 tyresDamage[4] 4 × uint8  (RL, RR, FL, FR)
+        # +0  tyresWear[4]        4 × float  (RL, RR, FL, FR)
+        # +16 tyresDamage[4]     4 × uint8  (RL, RR, FL, FR)
+        # +24 frontLeftWingDamage  uint8
+        # +25 frontRightWingDamage uint8
         wear   = struct.unpack_from("<4f", data, base +  0)
         damage = struct.unpack_from("<4B", data, base + 16)
-        # Clamp to valid range; reject obviously wrong values from bad offsets
-        valid = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
+        valid  = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
+        fw_dmg = [None, None]
+        if len(data) >= base + 26:
+            fw_dmg = list(struct.unpack_from("<2B", data, base + 24))
         with state_lock:
-            state["tyre_wear"]   = valid
-            state["tyre_damage"] = list(damage)
+            state["tyre_wear"]          = valid
+            state["tyre_damage"]        = list(damage)
+            state["front_wing_damage"]  = fw_dmg  # [left, right] 0-100
     except Exception as e:
         log.debug("parse_car_damage: %s", e)
 
