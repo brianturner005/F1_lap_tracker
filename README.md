@@ -13,9 +13,10 @@ A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Capture
 - **Session info** — track name, session type (Race, Qualifying, Practice, etc.), and weather pulled live from telemetry
 - **Session storage** — every session and lap is automatically saved to a local SQLite database (`f1_laps.db`) so your data persists between runs
 - **Toast notifications** — pop-up alerts for new track PBs and sector bests
-- **Lap comparison overlay** — select any two laps from the table to compare their speed, inputs, and G-force side-by-side
+- **Lap comparison overlay** — select any two laps from the table to compare their speed, inputs, gear, steering, and G-force side-by-side
 - **Live track map** — animated car position with sector colouring or speed heatmap; browse any previous lap with the arrow navigation
-- **Live telemetry charts** — speed trace, throttle & brake inputs, and a G-force circle updated in real time
+- **Live telemetry charts** — speed trace, throttle & brake inputs, gear step chart, steering chart, and G-force circle updated in real time
+- **Rev-lights strip** — live RPM indicator using the game's built-in rev-light percentage, with a large gear number display updated every 250 ms
 - **Career stats tab** — tracks race results (position, points, grid, fastest lap) across every session; shows wins, podiums, points total, and DNFs
 - **Past sessions panel** — browse all previous sessions directly in the dashboard (collapsible)
 - **CSV export** — download the current session or any past session as a CSV file
@@ -91,46 +92,48 @@ Start the launcher before or after launching F1 25 — order doesn't matter. Onc
 | **SUBMIT PBs toggle** | Enable or disable sharing your PBs with the community leaderboard (opt-in only). |
 | **Display name** | Set the name shown next to your times on the community leaderboard. |
 
-### Session tab
+### RACE tab (default)
 
-The default view. Shows the live lap table, telemetry charts, track map, personal bests, and past sessions.
+The default view, designed for use while driving. Shows the live rev-lights panel and telemetry charts. The track map and all session stats are always visible in the left sidebar regardless of which tab is active.
+
+#### Rev-lights panel
+
+Always shown once UDP telemetry is connected. Displays:
+
+- **Gear number** — large live readout of the current gear (`R`, `N`, `1`–`8`)
+- **Rev-lights strip** — 15 LEDs that fill left-to-right using the game's built-in rev-light percentage; colours progress green → yellow → red with a glow effect on lit segments. Updated every 250 ms.
+
+#### Telemetry charts
+
+Updated live every 250 ms as you drive. After your first lap completes, the full trace is drawn:
+
+| Chart | Description |
+|---|---|
+| **Speed** | km/h across the lap distance, sector-banded |
+| **Throttle & Brake** | Throttle (green) and brake (red) inputs 0–100% |
+| **Gear** | Step chart showing which gear was selected at each point in the lap |
+| **Steering** | Centred line chart; positive = right lock, negative = left lock |
+| **G-Force circle** | Lateral vs. longitudinal G, dots coloured by sector; inner ring = 2G reference |
+
+Use the track map **← →** buttons to review any previous lap's telemetry. In **comparison mode**, the selected lap (A) is drawn in its normal colour; the reference lap (B) is overlaid in orange/amber across all five charts.
+
+### SESSION tab
+
+Shows your lap history and comparison tools for the current session.
 
 #### Lap table
 
-Each lap row shows:
-
 | Column | Description |
 |---|---|
-| **LAP** | Lap number. Click any row to select it for lap comparison (slots A or B). |
+| **LAP** | Lap number |
 | **TYRE** | Compound pill — `S` Soft (red), `M` Medium (yellow), `H` Hard (white), `I` Inter (green), `W` Wet (blue) |
 | **TIME** | Lap time. `★` = session best. `🏆` = new all-time track PB. |
 | **DELTA** | Gap to track PB (purple `PB!` if this lap set a new record); falls back to session best if no prior PB exists |
 | **S1 / S2 / S3** | Sector split times. Best sector each session is highlighted with a purple cell background. |
 
-#### Telemetry charts
-
-Displayed below the lap table. Updated live every 250 ms:
-
-- **Speed trace** — km/h across the lap distance, coloured by sector
-- **Throttle & Brake** — green = throttle, red = brake input (0–100%)
-- **G-Force circle** — lateral vs. longitudinal G, dots coloured by sector; inner ring = 2G reference
-
-Use the track map **← →** buttons to review any previous lap's telemetry. In **comparison mode**, the selected lap (A) is shown in blue/green/red on top of the reference lap (B) in orange/amber.
-
-#### Track map
-
-Live animated car position plotted from motion telemetry. Two display modes:
-
-| Mode | Description |
-|---|---|
-| **S1/S2/S3** | Trace coloured by sector (blue/yellow/red) |
-| **SPEED** | Heatmap from slow (blue) to fast (red) |
-
-Use the **← →** arrows beneath the map to step through previous laps. Click **LIVE** to return to the real-time view.
-
 #### Lap comparison
 
-Click a lap row to assign it to slot **A**, then click another to assign slot **B**. The comparison bar shows both lap numbers and the telemetry panel switches to overlay mode. Click **CLEAR** to exit comparison and return to live view.
+Click **A** or **B** next to any lap to assign it to a comparison slot. The comparison bar shows both laps and the RACE tab telemetry switches to overlay mode across all charts. Click **CLEAR** to exit.
 
 #### Personal Bests panel
 
@@ -215,7 +218,7 @@ F1 25 broadcasts UDP packets on your local network containing real-time telemetr
   - Packet ID 1 (Session Data) — track, session type, weather
   - Packet ID 2 (Lap Data) — lap times and sector splits
   - Packet ID 3 (Event) — fastest lap detection (FTLP event)
-  - Packet ID 6 (Car Telemetry) — speed, throttle, brake, and gear for telemetry charts
+  - Packet ID 6 (Car Telemetry) — speed, throttle, brake, gear, steering, RPM, and rev-lights percent for telemetry charts and the live rev-lights panel
   - Packet ID 7 (Car Status) — tyre compound
   - Packet ID 8 (Final Classification) — race finishing position, points, and result status
 - **HTTP server** on port `5000` — serves the dashboard and API endpoints; the browser polls `/api/state` every second
