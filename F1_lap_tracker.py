@@ -96,6 +96,9 @@ state = {
     "car_throttle": 0.0,               # throttle input 0.0–1.0
     "car_brake": 0.0,                  # brake input 0.0–1.0
     "car_gear": 0,                     # current gear (-1=R, 0=N, 1–8)
+    "car_steer": 0.0,                  # steering input -1.0 (left) to 1.0 (right)
+    "car_rpm": 0,                      # engine RPM
+    "rev_lights_pct": 0,               # rev lights 0–100 (from game)
     "g_lat": 0.0,                      # lateral g-force
     "g_lon": 0.0,                      # longitudinal g-force
     "current_sector": 0,               # 0=S1, 1=S2, 2=S3
@@ -718,8 +721,10 @@ def parse_motion_packet(data, player_idx):
             state["g_lon"]   = round(g_lon, 3)
             spd      = state["car_speed"]
             throttle = state["car_throttle"]
+            steer    = state["car_steer"]
             brake    = state["car_brake"]
             gear     = state["car_gear"]
+            rpm      = state["car_rpm"]
             sector   = state["current_sector"]
             trace    = state["lap_trace"]
             # Subsample: only store a point if car has moved far enough
@@ -728,7 +733,8 @@ def parse_motion_packet(data, player_idx):
                     trace.append({
                         "x": round(x, 1), "z": round(z, 1),
                         "speed": spd, "sector": sector,
-                        "throttle": throttle, "brake": brake, "gear": gear,
+                        "throttle": throttle, "brake": brake,
+                        "steer": steer, "gear": gear, "rpm": rpm,
                         "gLat": round(g_lat, 2), "gLon": round(g_lon, 2),
                     })
     except Exception as e:
@@ -737,18 +743,25 @@ def parse_motion_packet(data, player_idx):
 def parse_car_telemetry_packet(data, player_idx):
     try:
         base = HEADER_SIZE + player_idx * CAR_TELEMETRY_SIZE
-        if len(data) < base + 16:
+        if len(data) < base + 20:
             return
-        # +0 speed(u16)  +2 throttle(f32)  +6 steer(f32)  +10 brake(f32)  +15 gear(i8)
-        speed    = struct.unpack_from("<H",  data, base +  0)[0]
-        throttle = struct.unpack_from("<f",  data, base +  2)[0]
-        brake    = struct.unpack_from("<f",  data, base + 10)[0]
-        gear     = struct.unpack_from("<b",  data, base + 15)[0]
+        # +0 speed(u16)  +2 throttle(f32)  +6 steer(f32)  +10 brake(f32)
+        # +14 clutch(u8) +15 gear(i8)  +16 engineRPM(u16)  +18 drs(u8)  +19 revLightsPct(u8)
+        speed          = struct.unpack_from("<H", data, base +  0)[0]
+        throttle       = struct.unpack_from("<f", data, base +  2)[0]
+        steer          = struct.unpack_from("<f", data, base +  6)[0]
+        brake          = struct.unpack_from("<f", data, base + 10)[0]
+        gear           = struct.unpack_from("<b", data, base + 15)[0]
+        rpm            = struct.unpack_from("<H", data, base + 16)[0]
+        rev_lights_pct = struct.unpack_from("<B", data, base + 19)[0]
         with state_lock:
-            state["car_speed"]    = int(speed)
-            state["car_throttle"] = round(max(0.0, min(1.0, throttle)), 3)
-            state["car_brake"]    = round(max(0.0, min(1.0, brake)),    3)
-            state["car_gear"]     = int(gear)
+            state["car_speed"]       = int(speed)
+            state["car_throttle"]    = round(max(0.0, min(1.0, throttle)), 3)
+            state["car_steer"]       = round(max(-1.0, min(1.0, steer)),   3)
+            state["car_brake"]       = round(max(0.0, min(1.0, brake)),    3)
+            state["car_gear"]        = int(gear)
+            state["car_rpm"]         = int(rpm)
+            state["rev_lights_pct"]  = int(rev_lights_pct)
     except Exception as e:
         log.debug("parse_car_telemetry: %s", e)
 
@@ -1246,10 +1259,12 @@ class Handler(BaseHTTPRequestHandler):
                     step = len(pts) // n
                     return pts[::step]
                 payload = json.dumps({
-                    "car_pos":       state["car_pos"],
-                    "car_speed":     state["car_speed"],
-                    "lap_trace":     _thin(trace),
-                    "track_outline": _thin(outline),
+                    "car_pos":        state["car_pos"],
+                    "car_speed":      state["car_speed"],
+                    "car_gear":       state["car_gear"],
+                    "rev_lights_pct": state["rev_lights_pct"],
+                    "lap_trace":      _thin(trace),
+                    "track_outline":  _thin(outline),
                 }).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
