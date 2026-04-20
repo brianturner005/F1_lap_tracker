@@ -256,6 +256,10 @@ tbody tr:hover { background: rgba(255,255,255,.05); }
 tbody tr.best-lap { background: rgba(255,215,0,.07); }
 tbody tr.track-pb-lap { background: rgba(199,125,255,.07); }
 tbody tr.invalid { opacity: .4; }
+tbody tr.lap-selected td { background: rgba(255,255,255,.10) !important; }
+tbody tr.lap-selected { outline: 1px solid rgba(255,255,255,.22); cursor: pointer; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: rgba(255,255,255,.04); }
 td { padding: 7px 8px; }
 td.lap-num { color: var(--muted); font-size: .7rem; }
 td.lap-time { font-family: 'Orbitron', sans-serif; font-size: .85rem; color: var(--text); }
@@ -584,6 +588,31 @@ backdrop-filter: blur(4px);
       <button onclick="clearComparison()" style="margin-left:auto;font-size:.6rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;">CLEAR</button>
     </div>
     <div id="lap-table"></div>
+    <div id="session-review-section" style="display:none;margin-top:12px;">
+      <div class="panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Telemetry — Lap <span id="session-review-title">—</span></span>
+          <button onclick="closeSessionReview()" style="font-size:.6rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;">✕ CLOSE</button>
+        </div>
+        <div id="session-review-waiting" style="display:flex;align-items:center;justify-content:center;height:80px;color:var(--muted);font-size:.8rem;letter-spacing:.1em;">Loading trace…</div>
+        <div id="session-review-charts" class="telem-wrap" style="display:none;">
+          <div class="telem-charts">
+            <div class="telem-label">SPEED (km/h)</div>
+            <canvas id="speed-canvas-sr" width="600" height="140" style="width:100%;display:block;"></canvas>
+            <div class="telem-label" style="margin-top:10px;">THROTTLE &amp; BRAKE</div>
+            <canvas id="inputs-canvas-sr" width="600" height="100" style="width:100%;display:block;"></canvas>
+            <div class="telem-label" style="margin-top:10px;">GEAR</div>
+            <canvas id="gear-canvas-sr" width="600" height="60" style="width:100%;display:block;"></canvas>
+            <div class="telem-label" style="margin-top:10px;">STEERING</div>
+            <canvas id="steer-canvas-sr" width="600" height="70" style="width:100%;display:block;"></canvas>
+          </div>
+          <div class="telem-gforce-wrap">
+            <div class="telem-label">G-FORCE</div>
+            <canvas id="gforce-canvas-sr" width="220" height="220" style="display:block;width:100%;"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="debrief-section"></div>
     </div><!-- end tab-session -->
     <div id="tab-career" style="display:none">
@@ -1111,6 +1140,7 @@ function _checkToasts(laps) {
 
 // ── Lap comparison ────────────────────────────────────────────────────────────
 let _compareA = null, _compareB = null;
+let _selectedSessionLap = null;
 let _compareTraceA = null, _compareTraceB = null;
 
 function _updateCompBar() {
@@ -1168,6 +1198,47 @@ function _renderComparisonOrLive() {
 
 function _comparisonActive() {
   return _compareA !== null || _compareB !== null;
+}
+
+// ── Session lap review ────────────────────────────────────────────────────────
+async function selectSessionLap(lapNum) {
+  if (_selectedSessionLap === lapNum) {
+    closeSessionReview();
+    return;
+  }
+  _selectedSessionLap = lapNum;
+  if (lastData) render(lastData);
+
+  const sec = document.getElementById('session-review-section');
+  const waiting = document.getElementById('session-review-waiting');
+  const charts = document.getElementById('session-review-charts');
+  const title = document.getElementById('session-review-title');
+  if (!sec) return;
+  sec.style.display = 'block';
+  sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (waiting) waiting.style.display = 'flex';
+  if (charts) charts.style.display = 'none';
+  if (title) title.textContent = lapNum;
+
+  const sid = _sessionId;
+  if (!sid) return;
+  try {
+    const r = await fetch(`/api/lap-trace/${sid}/${lapNum}`);
+    const d = await r.json();
+    const trace = d.trace || [];
+    if (waiting) waiting.style.display = 'none';
+    if (charts) charts.style.display = '';
+    renderTelemetry(trace, null, '-sr');
+  } catch(e) {
+    if (waiting) waiting.textContent = 'Failed to load trace.';
+  }
+}
+
+function closeSessionReview() {
+  _selectedSessionLap = null;
+  const sec = document.getElementById('session-review-section');
+  if (sec) sec.style.display = 'none';
+  if (lastData) render(lastData);
 }
 
 function _togglePanel(panelId) {
@@ -1420,11 +1491,13 @@ function render(d) {
       const timeLabel = isTrackPB ? lap.lap_time + ' 🏆'
                       : isBest    ? lap.lap_time + ' ★'
                       : lap.lap_time;
+      const isSelected = _selectedSessionLap === lap.lap_num;
       const rowClass = [
         isBest ? 'best-lap' : '', isTrackPB ? 'track-pb-lap' : '',
-        isInvalid ? 'invalid' : '', isCompA ? 'comp-a-row' : '', isCompB ? 'comp-b-row' : ''
+        isInvalid ? 'invalid' : '', isCompA ? 'comp-a-row' : '', isCompB ? 'comp-b-row' : '',
+        isSelected ? 'lap-selected' : '',
       ].join(' ');
-      rows += `<tr class="${rowClass}">
+      rows += `<tr class="${rowClass}" onclick="if(event.target.tagName!=='BUTTON')selectSessionLap(${lap.lap_num})">
         <td class="lap-num">${lap.lap_num}</td>
         <td>${compoundPill(lap.compound)}</td>
         <td class="lap-time ${isTrackPB || isBest ? 'best' : ''}">${timeLabel}</td>
@@ -1474,7 +1547,16 @@ function msToLap(ms) {
 
 const _SECTOR_PALETTE = ['#e10600', '#f7c948', '#9b59b6'];
 
-function renderTelemetry(traceA, traceB = null) {
+function renderTelemetry(traceA, traceB = null, sfx = '') {
+  if (sfx) {
+    // Session-review mode: draw into -sr canvases
+    _renderSpeedChart(traceA, null, sfx);
+    _renderInputsChart(traceA, null, sfx);
+    _renderGearChart(traceA, null, sfx);
+    _renderSteerChart(traceA, null, sfx);
+    _renderGForceChart(traceA, null, sfx);
+    return;
+  }
   const sec = document.getElementById('telemetry-section');
   const waiting = document.getElementById('race-waiting');
   if (!traceA || traceA.length < 2) {
@@ -1502,8 +1584,8 @@ function renderTelemetry(traceA, traceB = null) {
 function _chartPad() { return { t: 6, b: 14, l: 28, r: 4 }; }
 
 
-function _renderSpeedChart(traceA, traceB = null) {
-  const canvas = document.getElementById('speed-canvas');
+function _renderSpeedChart(traceA, traceB = null, sfx = '') {
+  const canvas = document.getElementById('speed-canvas' + sfx);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
@@ -1616,8 +1698,8 @@ function _drawInputLines(ctx, trace, pad, cw, ch, thrColor, thrFill, brkColor, b
   ctx.stroke();
 }
 
-function _renderInputsChart(traceA, traceB = null) {
-  const canvas = document.getElementById('inputs-canvas');
+function _renderInputsChart(traceA, traceB = null, sfx = '') {
+  const canvas = document.getElementById('inputs-canvas' + sfx);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
@@ -1648,11 +1730,11 @@ function _renderInputsChart(traceA, traceB = null) {
     '#e10600', 'rgba(225,6,0,0.22)');
 }
 
-function _renderGForceChart(traceA, traceB = null) {
-  return _renderGForceChartImpl(traceA, traceB);
+function _renderGForceChart(traceA, traceB = null, sfx = '') {
+  return _renderGForceChartImpl(traceA, traceB, sfx);
 }
-function _renderGForceChartImpl(traceA, traceB) {
-  const canvas = document.getElementById('gforce-canvas');
+function _renderGForceChartImpl(traceA, traceB, sfx = '') {
+  const canvas = document.getElementById('gforce-canvas' + sfx);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
@@ -1728,8 +1810,8 @@ function _renderGForceChartImpl(traceA, traceB) {
 }
 
 // ── Gear chart ────────────────────────────────────────────────────────────────
-function _renderGearChart(traceA, traceB = null) {
-  const canvas = document.getElementById('gear-canvas');
+function _renderGearChart(traceA, traceB = null, sfx = '') {
+  const canvas = document.getElementById('gear-canvas' + sfx);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
@@ -1790,8 +1872,8 @@ function _renderGearChart(traceA, traceB = null) {
 }
 
 // ── Steering chart ─────────────────────────────────────────────────────────────
-function _renderSteerChart(traceA, traceB = null) {
-  const canvas = document.getElementById('steer-canvas');
+function _renderSteerChart(traceA, traceB = null, sfx = '') {
+  const canvas = document.getElementById('steer-canvas' + sfx);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
