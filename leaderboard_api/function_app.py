@@ -409,7 +409,10 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
     # Build telemetry table if any laps have telem data
     telem_laps = [lap for lap in laps if lap.get("telem")]
     telem_section = ""
-    has_tyre_wear = any(lap.get("telem", {}).get("tyre_wear_fl") is not None for lap in telem_laps)
+    def _tv(v):
+        """Return value for table cell, replacing None/missing with a dash."""
+        return v if v is not None else '—'
+    has_tyre_wear = any(_tv(lap.get("telem", {}).get("tyre_wear_fl")) != '—' for lap in telem_laps)
     if telem_laps:
         th = "Lap | MaxSpd | AvgSpd | FullThr% | HvyBrk% | MaxGLat | AvgGear | MaxSteer"
         if has_tyre_wear:
@@ -418,21 +421,21 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
         for lap in telem_laps:
             t = lap["telem"]
             row = (
-                f"Lap {lap.get('lap_num', '?'):>3} | "
-                f"{t.get('max_speed', '—'):>6} | "
-                f"{t.get('avg_speed', '—'):>6} | "
-                f"{t.get('full_throttle_pct', '—'):>8} | "
-                f"{t.get('heavy_brake_pct', '—'):>7} | "
-                f"{t.get('max_g_lat', '—'):>7} | "
-                f"{t.get('avg_gear', '—'):>7} | "
-                f"{t.get('max_steer', '—'):>8}"
+                f"Lap {_tv(lap.get('lap_num')):>3} | "
+                f"{str(_tv(t.get('max_speed'))):>6} | "
+                f"{str(_tv(t.get('avg_speed'))):>6} | "
+                f"{str(_tv(t.get('full_throttle_pct'))):>8} | "
+                f"{str(_tv(t.get('heavy_brake_pct'))):>7} | "
+                f"{str(_tv(t.get('max_g_lat'))):>7} | "
+                f"{str(_tv(t.get('avg_gear'))):>7} | "
+                f"{str(_tv(t.get('max_steer'))):>8}"
             )
             if has_tyre_wear:
                 row += (
-                    f" | {t.get('tyre_wear_fl', '—'):>3}"
-                    f" | {t.get('tyre_wear_fr', '—'):>3}"
-                    f" | {t.get('tyre_wear_rl', '—'):>3}"
-                    f" | {t.get('tyre_wear_rr', '—'):>3}"
+                    f" | {str(_tv(t.get('tyre_wear_fl'))):>3}"
+                    f" | {str(_tv(t.get('tyre_wear_fr'))):>3}"
+                    f" | {str(_tv(t.get('tyre_wear_rl'))):>3}"
+                    f" | {str(_tv(t.get('tyre_wear_rr'))):>3}"
                 )
             trows.append(row)
         telem_section = (
