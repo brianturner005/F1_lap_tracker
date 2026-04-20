@@ -14,6 +14,7 @@ A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Capture
 - **Session storage** — every session and lap is automatically saved to a local SQLite database (`f1_laps.db`) so your data persists between runs
 - **Toast notifications** — pop-up alerts for new track PBs and sector bests
 - **Lap comparison overlay** — select any two laps from the table to compare their speed, inputs, gear, steering, and G-force side-by-side
+- **Interactive lap review** — click any lap row in the SESSION tab to instantly load its full telemetry inline below the table; click the same row again (or ✕ CLOSE) to dismiss
 - **Live track map** — animated car position with sector colouring or speed heatmap; browse any previous lap with the arrow navigation
 - **Live telemetry charts** — speed trace, throttle & brake inputs, gear step chart, steering chart, and G-force circle updated in real time
 - **Rev-lights strip** — live RPM indicator using the game's built-in rev-light percentage, with a large gear number display updated every 250 ms
@@ -130,6 +131,10 @@ Shows your lap history and comparison tools for the current session.
 | **TIME** | Lap time. `★` = session best. `🏆` = new all-time track PB. |
 | **DELTA** | Gap to track PB (purple `PB!` if this lap set a new record); falls back to session best if no prior PB exists |
 | **S1 / S2 / S3** | Sector split times. Best sector each session is highlighted with a purple cell background. |
+
+#### Inline lap telemetry review
+
+Click any row in the lap table to load that lap's full telemetry directly below the table (speed, throttle & brake, gear, steering, and G-force). The selected row is highlighted. Click the same row again or press **✕ CLOSE** to dismiss.
 
 #### Lap comparison
 
