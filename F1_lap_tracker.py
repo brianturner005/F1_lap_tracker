@@ -845,10 +845,10 @@ def parse_final_classification_packet(data, player_idx):
         num_cars = struct.unpack_from("<B", data, base)[0]
         if player_idx >= num_cars or num_cars == 0:
             return
-        # Compute per-car size dynamically — guards against F1 25 spec changes
-        per_car = (len(data) - HEADER_SIZE - 1) // num_cars
-        if per_car < 20:
-            return
+        # The packet body always has 22 car entries regardless of num_cars.
+        # Dividing by num_cars (e.g. 20) gives the wrong stride (49 instead of
+        # 45) and misaligns every field for player_idx > 0.
+        per_car = FINAL_CLASS_SIZE
         car_base = base + 1 + player_idx * per_car
         if len(data) < car_base + 20:
             return
