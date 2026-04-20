@@ -455,6 +455,18 @@ backdrop-filter: blur(4px);
 }
 .theme-select:hover, .theme-select:focus { border-color: var(--red); color: var(--text); }
 .theme-select option { background: #111; }
+.lb-select {
+  background: #111114;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: .78rem;
+  cursor: pointer;
+  outline: none;
+}
+.lb-select option { background: #111114; color: var(--text); }
 
 /* Track map */
 #track-map-panel { display:none; }
@@ -625,12 +637,10 @@ backdrop-filter: blur(4px);
     </div>
     <div id="tab-leaderboard" style="display:none">
       <div class="panel" style="margin-bottom:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <select id="lb-track-select" onchange="onLbTrackChange()"
-          style="background:var(--bg2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:inherit;font-size:.78rem;min-width:180px;cursor:pointer">
+        <select id="lb-track-select" class="lb-select" style="min-width:180px" onchange="onLbTrackChange()">
           <option value="">— Track —</option>
         </select>
-        <select id="lb-sesstype-select" onchange="onLbSessTypeChange()"
-          style="background:var(--bg2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:inherit;font-size:.78rem;min-width:130px;cursor:pointer">
+        <select id="lb-sesstype-select" class="lb-select" style="min-width:130px" onchange="onLbSessTypeChange()">
           <option value="">— Session Type —</option>
         </select>
         <div style="display:flex;gap:4px;margin-left:auto;">
@@ -916,15 +926,17 @@ async function renderCommunity() {
     el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
     return;
   }
-  // When 'All' is selected, pick the first session type the user has a PB in
+  // When 'All' is selected, prefer Race > Qualifying > Practice over short sessions
+  const _SESS_PRIORITY = ['Race','Race 2','Race 3','Qualifying 3','Qualifying 2','Qualifying 1',
+                          'Practice 1','Practice 2','Practice 3','OSQ','Time Trial'];
   let sessType = _lbSessionType;
   if (!sessType || sessType === 'all') {
-    const firstPb = _lbPbs.find(p => p.track === _lbTrack);
-    if (!firstPb) {
+    const trackPbs = _lbPbs.filter(p => p.track === _lbTrack);
+    if (!trackPbs.length) {
       el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">No times recorded for this track.</p></div>`;
       return;
     }
-    sessType = firstPb.session_type;
+    sessType = _SESS_PRIORITY.find(s => trackPbs.some(p => p.session_type === s)) || trackPbs[0].session_type;
   }
   el.innerHTML = `<div class="panel lb-wrap">
     <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(sessType)}</div>
