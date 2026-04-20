@@ -400,7 +400,7 @@ tr.comp-b-row td { background:rgba(247,164,76,.07); }
 .telem-wrap { display: flex; gap: 10px; align-items: flex-start; margin-top: 4px; }
 .telem-charts { flex: 1; min-width: 0; }
 .telem-gforce-wrap { width: 220px; flex-shrink: 0; }
-.telem-label { font-size: .72rem; letter-spacing: .1em; color: var(--muted); margin-bottom: 4px; }
+.telem-label { font-size: .72rem; letter-spacing: .1em; color: #bbb; margin-bottom: 4px; }
 
 /* Community leaderboard panel */
 .lb-wrap { padding-bottom: 8px; }
@@ -461,7 +461,7 @@ backdrop-filter: blur(4px);
 #track-canvas { border-radius:8px; background:transparent; }
 .map-mode-btn {
   font-size: .52rem; padding: 3px 8px; border-radius: 5px; cursor: pointer;
-  background: var(--glass); border: 1px solid var(--glass-border); color: var(--muted);
+  background: var(--glass); border: 1px solid var(--glass-border); color: #ccc;
   font-family: 'Share Tech Mono', monospace; letter-spacing: .06em;
   transition: border-color .2s, color .2s, background .2s;
 }
@@ -1624,7 +1624,7 @@ function _renderSpeedChart(traceA, traceB = null, sfx = '') {
     const y = pad.t + ch - ((v - minS) / rng) * ch;
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.60)'; ctx.font = '8px monospace';
     ctx.fillText(v, 0, y + 3);
   }
 
@@ -1769,7 +1769,7 @@ function _renderGForceChartImpl(traceA, traceB, sfx = '') {
     ctx.strokeStyle = g === 3 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)';
     ctx.lineWidth = g === 3 ? 1.5 : 1;
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '8px monospace';
     ctx.fillText(`${g}G`, cx + scale * g / maxG + 2, cy - 2);
   }
 
@@ -1779,7 +1779,7 @@ function _renderGForceChartImpl(traceA, traceB, sfx = '') {
   ctx.beginPath(); ctx.moveTo(4, cy); ctx.lineTo(w - 4, cy); ctx.stroke();
 
   // Axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '7px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '7px monospace';
   ctx.fillText('LAT', w - 20, cy - 3);
   ctx.fillText('LON', cx + 3, 10);
 
@@ -1882,7 +1882,7 @@ function _renderGearChart(traceA, traceB = null, sfx = '') {
   drawGearTrace(traceA, 'rgba(225,6,0,0.12)', '#e10600');
 
   // Y-axis gear labels
-  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.60)'; ctx.font = '8px monospace';
   for (let g = 2; g <= MAX_GEAR; g += 2) {
     const y = pad.t + ch - (g / MAX_GEAR) * ch;
     ctx.fillText(g, 0, y + 3);
@@ -1920,7 +1920,7 @@ function _renderSteerChart(traceA, traceB = null, sfx = '') {
   ctx.beginPath(); ctx.moveTo(pad.l, cy); ctx.lineTo(pad.l + cw, cy); ctx.stroke();
 
   // Y-axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.60)'; ctx.font = '8px monospace';
   ctx.fillText('L', 0, pad.t + 9);
   ctx.fillText('R', 0, pad.t + ch);
 
