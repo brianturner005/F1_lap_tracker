@@ -538,6 +538,18 @@ backdrop-filter: blur(4px);
       <button class="tab" id="tab-btn-leaderboard" onclick="switchTab('leaderboard')">LEADERBOARD</button>
     </div>
     <div id="tab-race">
+      <div id="rev-lights-section" class="panel" style="display:none;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:20px;">
+          <div style="text-align:center;min-width:48px;">
+            <div class="telem-label">GEAR</div>
+            <div id="live-gear" style="font-family:'Orbitron',sans-serif;font-size:2.8rem;font-weight:700;color:var(--fg);line-height:1;">N</div>
+          </div>
+          <div style="flex:1;">
+            <div class="telem-label" style="margin-bottom:6px;">RPM</div>
+            <canvas id="rev-lights-canvas" width="600" height="28" style="width:100%;display:block;border-radius:4px;"></canvas>
+          </div>
+        </div>
+      </div>
       <div id="telemetry-section" style="display:none;">
         <div class="panel">
           <div class="panel-title" id="telem-title">Telemetry</div>
@@ -547,6 +559,10 @@ backdrop-filter: blur(4px);
               <canvas id="speed-canvas" width="600" height="140" style="width:100%;display:block;"></canvas>
               <div class="telem-label" style="margin-top:10px;">THROTTLE &amp; BRAKE</div>
               <canvas id="inputs-canvas" width="600" height="100" style="width:100%;display:block;"></canvas>
+              <div class="telem-label" style="margin-top:10px;">GEAR</div>
+              <canvas id="gear-canvas" width="600" height="60" style="width:100%;display:block;"></canvas>
+              <div class="telem-label" style="margin-top:10px;">STEERING</div>
+              <canvas id="steer-canvas" width="600" height="70" style="width:100%;display:block;"></canvas>
             </div>
             <div class="telem-gforce-wrap">
               <div class="telem-label">G-FORCE</div>
@@ -1478,6 +1494,8 @@ function renderTelemetry(traceA, traceB = null) {
   }
   _renderSpeedChart(traceA, traceB);
   _renderInputsChart(traceA, traceB);
+  _renderGearChart(traceA, traceB);
+  _renderSteerChart(traceA, traceB);
   _renderGForceChart(traceA, traceB);
 }
 
@@ -1709,6 +1727,185 @@ function _renderGForceChartImpl(traceA, traceB) {
   }
 }
 
+// ── Gear chart ────────────────────────────────────────────────────────────────
+function _renderGearChart(traceA, traceB = null) {
+  const canvas = document.getElementById('gear-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!traceA || traceA.length < 2) return;
+
+  const pad = _chartPad();
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const MAX_GEAR = 8;
+
+  // Sector colour bar (reuse pattern from speed chart)
+  const nA = traceA.length;
+  let secStart = 0, lastSec = traceA[0].sector;
+  for (let i = 1; i <= nA; i++) {
+    if (i === nA || traceA[i].sector !== lastSec) {
+      const x1 = pad.l + (secStart / (nA - 1)) * cw;
+      const x2 = pad.l + (Math.min(i, nA - 1) / (nA - 1)) * cw;
+      ctx.fillStyle = _SECTOR_PALETTE[lastSec] || 'rgba(255,255,255,0.15)';
+      ctx.fillRect(x1, h - pad.b + 2, x2 - x1, 4);
+      if (i < nA) { lastSec = traceA[i].sector; secStart = i; }
+    }
+  }
+
+  function drawGearTrace(trace, fillColor, strokeColor) {
+    const n = trace.length;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const g = Math.max(0, trace[i].gear ?? 0);
+      const x = pad.l + (i / (n - 1)) * cw;
+      const y = pad.t + ch - (g / MAX_GEAR) * ch;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    // close fill path
+    ctx.lineTo(pad.l + cw, pad.t + ch);
+    ctx.lineTo(pad.l,      pad.t + ch);
+    ctx.closePath();
+    ctx.fillStyle = fillColor; ctx.fill();
+    // stroke
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const g = Math.max(0, trace[i].gear ?? 0);
+      const x = pad.l + (i / (n - 1)) * cw;
+      const y = pad.t + ch - (g / MAX_GEAR) * ch;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = strokeColor; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+  }
+
+  if (traceB && traceB.length >= 2) drawGearTrace(traceB, 'rgba(247,164,76,0.10)', '#f7a44c');
+  drawGearTrace(traceA, 'rgba(225,6,0,0.12)', '#e10600');
+
+  // Y-axis gear labels
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+  for (let g = 2; g <= MAX_GEAR; g += 2) {
+    const y = pad.t + ch - (g / MAX_GEAR) * ch;
+    ctx.fillText(g, 0, y + 3);
+  }
+}
+
+// ── Steering chart ─────────────────────────────────────────────────────────────
+function _renderSteerChart(traceA, traceB = null) {
+  const canvas = document.getElementById('steer-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!traceA || traceA.length < 2) return;
+
+  const pad = _chartPad();
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const cy = pad.t + ch / 2; // zero line
+
+  // Sector colour bar
+  const nA = traceA.length;
+  let secStart = 0, lastSec = traceA[0].sector;
+  for (let i = 1; i <= nA; i++) {
+    if (i === nA || traceA[i].sector !== lastSec) {
+      const x1 = pad.l + (secStart / (nA - 1)) * cw;
+      const x2 = pad.l + (Math.min(i, nA - 1) / (nA - 1)) * cw;
+      ctx.fillStyle = _SECTOR_PALETTE[lastSec] || 'rgba(255,255,255,0.15)';
+      ctx.fillRect(x1, h - pad.b + 2, x2 - x1, 4);
+      if (i < nA) { lastSec = traceA[i].sector; secStart = i; }
+    }
+  }
+
+  // Zero centre line
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.l, cy); ctx.lineTo(pad.l + cw, cy); ctx.stroke();
+
+  // Y-axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+  ctx.fillText('L', 0, pad.t + 9);
+  ctx.fillText('R', 0, pad.t + ch);
+
+  function drawSteerTrace(trace, fillLeft, fillRight, strokeCol) {
+    const n = trace.length;
+    // Fill right turns (positive steer) above zero line
+    ctx.beginPath();
+    ctx.moveTo(pad.l, cy);
+    for (let i = 0; i < n; i++) {
+      const s = trace[i].steer ?? 0;
+      const x = pad.l + (i / (n - 1)) * cw;
+      const y = cy - (s / 1.0) * (ch / 2);
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(pad.l + cw, cy); ctx.closePath();
+    ctx.fillStyle = fillRight; ctx.fill();
+    // Stroke
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const s = trace[i].steer ?? 0;
+      const x = pad.l + (i / (n - 1)) * cw;
+      const y = cy - (s / 1.0) * (ch / 2);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = strokeCol; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+  }
+
+  if (traceB && traceB.length >= 2) drawSteerTrace(traceB, 'rgba(247,164,76,0.08)', 'rgba(247,164,76,0.08)', '#f7a44c');
+  drawSteerTrace(traceA, 'rgba(225,6,0,0.12)', 'rgba(225,6,0,0.12)', '#e10600');
+}
+
+// ── Rev lights (live) ─────────────────────────────────────────────────────────
+function renderRevLights(pct, gear) {
+  const section = document.getElementById('rev-lights-section');
+  const gearEl  = document.getElementById('live-gear');
+  const canvas  = document.getElementById('rev-lights-canvas');
+  if (!section || !canvas) return;
+
+  section.style.display = 'block';
+
+  // Update gear display
+  if (gearEl) {
+    const g = gear ?? 0;
+    gearEl.textContent = g === 0 ? 'N' : g < 0 ? 'R' : String(g);
+  }
+
+  // Draw 15-LED rev light strip (5 green, 5 yellow, 5 red)
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const N = 15;
+  const lit = Math.round((pct / 100) * N);
+  const ledW = Math.floor(w / N);
+  const gap  = 3;
+
+  const COLOURS = [
+    '#22c55e','#22c55e','#22c55e','#22c55e','#22c55e',   // 5 green
+    '#facc15','#facc15','#facc15','#facc15','#facc15',   // 5 yellow
+    '#ef4444','#ef4444','#ef4444','#ef4444','#ef4444',   // 5 red
+  ];
+  const DIM = [
+    '#0a2e14','#0a2e14','#0a2e14','#0a2e14','#0a2e14',
+    '#2e2700','#2e2700','#2e2700','#2e2700','#2e2700',
+    '#2e0808','#2e0808','#2e0808','#2e0808','#2e0808',
+  ];
+
+  for (let i = 0; i < N; i++) {
+    const x = i * ledW + gap / 2;
+    const bw = ledW - gap;
+    ctx.fillStyle = i < lit ? COLOURS[i] : DIM[i];
+    ctx.beginPath();
+    const r = 3;
+    ctx.roundRect(x, 1, bw, h - 2, r);
+    ctx.fill();
+    // glow on lit LEDs
+    if (i < lit) {
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = COLOURS[i];
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+}
+
 // ── Track Map ──────────────────────────────────────────────────────────────────
 let _mapMode         = 'sector';
 let _loadedSvg       = null;
@@ -1886,6 +2083,7 @@ async function fetchMotion() {
         }
       }
     }
+    renderRevLights(d.rev_lights_pct || 0, d.car_gear ?? 0);
     if (_reviewLap === null) {
       renderTrackMap(d);
       if (!_comparisonActive()) renderTelemetry(d.lap_trace || []);
