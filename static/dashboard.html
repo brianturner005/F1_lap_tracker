@@ -581,6 +581,8 @@ backdrop-filter: blur(4px);
               <canvas id="steer-canvas" width="600" height="55" style="width:100%;display:block;"></canvas>
             </div>
             <div class="telem-gforce-wrap">
+              <div class="telem-label">SPEED</div>
+              <div id="live-speed-slot" style="margin-bottom:14px;"></div>
               <div class="telem-label">G-FORCE</div>
               <canvas id="gforce-canvas" width="220" height="180" style="display:block;width:100%;"></canvas>
               <div id="tyre-wear-slot"></div>
@@ -2063,6 +2065,81 @@ function renderRevLights(pct, gear) {
   }
 }
 
+function renderSpeedGauge(speed) {
+  const slot = document.getElementById('live-speed-slot');
+  if (!slot) return;
+
+  let canvas = slot.querySelector('canvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.width  = 220;
+    canvas.height = 148;
+    canvas.style.cssText = 'width:100%;display:block;';
+    slot.appendChild(canvas);
+  }
+
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const MAX  = 370;
+  const spd  = Math.max(0, Math.min(speed || 0, MAX));
+  const frac = spd / MAX;
+
+  const cx  = W / 2;
+  const cy  = 105;
+  const R   = 80;
+  const TW  = 11;
+  // Arc: 150° start (8 o'clock), 240° clockwise sweep ending at 30° (4 o'clock)
+  const SA  = (5 / 6) * Math.PI;
+  const SW  = (4 / 3) * Math.PI;
+
+  // Background track
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, SA, SA + SW);
+  ctx.strokeStyle = 'rgba(255,255,255,.1)';
+  ctx.lineWidth = TW;
+  ctx.lineCap = 'butt';
+  ctx.stroke();
+
+  // Speed fill arc
+  if (frac > 0.004) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, SA, SA + frac * SW);
+    ctx.strokeStyle = '#00d2ff';
+    ctx.lineWidth = TW;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Glowing tip
+    const tipA = SA + frac * SW;
+    const tx = cx + R * Math.cos(tipA);
+    const ty = cy + R * Math.sin(tipA);
+    ctx.save();
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = '#00d2ff';
+    ctx.beginPath();
+    ctx.arc(tx, ty, TW / 2 - 1, 0, 2 * Math.PI);
+    ctx.fillStyle = '#80eeff';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Speed number
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00d2ff';
+  ctx.font = `bold 46px 'Orbitron', monospace`;
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = 'rgba(0,210,255,.55)';
+  ctx.fillText(String(Math.round(spd)), cx, cy + 14);
+  ctx.shadowBlur = 0;
+
+  // Unit label
+  ctx.fillStyle = 'rgba(255,255,255,.42)';
+  ctx.font = `500 10px 'Inter', sans-serif`;
+  ctx.fillText('km/h', cx, cy + 32);
+}
+
 // ── Track Map ──────────────────────────────────────────────────────────────────
 let _mapMode         = 'sector';
 let _loadedSvg       = null;
@@ -2241,6 +2318,7 @@ async function fetchMotion() {
       }
     }
     renderRevLights(d.rev_lights_pct || 0, d.car_gear ?? 0);
+    renderSpeedGauge(d.car_speed || 0);
     if (_reviewLap === null) {
       renderTrackMap(d);
       if (!_comparisonActive()) renderTelemetry(d.lap_trace || []);
