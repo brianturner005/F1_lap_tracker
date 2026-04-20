@@ -676,13 +676,11 @@ def parse_lap_data_packet(data, player_idx):
                 "avg_gear":          round(avg_gear, 1),
                 "max_steer":         round(max_steer, 2),
             }
-            # Capture tyre wear at lap completion (FL, FR, RL, RR)
+            # Capture tyre wear at lap completion (FL, FR, RL, RR) — only store non-None values
             tw = state.get("tyre_wear", [None, None, None, None])
-            if any(v is not None for v in tw):
-                lap_record["telem"]["tyre_wear_fl"] = round(tw[2]) if tw[2] is not None else None
-                lap_record["telem"]["tyre_wear_fr"] = round(tw[3]) if tw[3] is not None else None
-                lap_record["telem"]["tyre_wear_rl"] = round(tw[0]) if tw[0] is not None else None
-                lap_record["telem"]["tyre_wear_rr"] = round(tw[1]) if tw[1] is not None else None
+            for idx, key in ((2, "tyre_wear_fl"), (3, "tyre_wear_fr"), (0, "tyre_wear_rl"), (1, "tyre_wear_rr")):
+                if tw[idx] is not None:
+                    lap_record["telem"][key] = round(tw[idx])
 
         if save_session_id is not None:
             db_save_lap(save_session_id, lap_record, trace=saved_trace)
