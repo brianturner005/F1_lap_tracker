@@ -23,6 +23,19 @@ if [[ -z "${AOAI_ENDPOINT}" ]]; then
   echo ""
 fi
 
+# ⚠️  IMPORTANT: running this script re-deploys the Bicep template, which
+# resets ALL Function App settings to the values passed here. If AOAI_ENDPOINT
+# and AOAI_KEY are not exported before running, the existing credentials in
+# Azure will be OVERWRITTEN with empty strings and the AI debrief will stop
+# working.
+#
+# To push code changes ONLY (without touching app settings), use:
+#   cd leaderboard_api && func azure functionapp publish <APP_NAME> --python
+echo "⚠️  WARNING: This script will overwrite Azure Function App settings."
+echo "     If you only want to publish code (not change settings), run instead:"
+echo "     cd leaderboard_api && func azure functionapp publish \${BASE_NAME}-func --python"
+echo ""
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BICEP_FILE="${SCRIPT_DIR}/main.bicep"

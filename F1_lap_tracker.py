@@ -811,6 +811,10 @@ def parse_car_damage_packet(data, player_idx):
         wear   = struct.unpack_from("<4f", data, base +  0)
         damage = struct.unpack_from("<4B", data, base + 16)
         valid  = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
+        # Debug: dump bytes +20 to +35 so we can identify the correct front-wing offset
+        raw_slice = list(data[base + 20 : base + 36])
+        print(f"[CarDamage] per_car={per_car} wear={[round(w,1) for w in wear]} "
+              f"tyreDmg={list(damage)} bytes+20..+35={raw_slice}")
         fw_dmg = [None, None]
         if len(data) >= base + 26:
             fw_dmg = list(struct.unpack_from("<2B", data, base + 24))
@@ -845,10 +849,10 @@ def parse_final_classification_packet(data, player_idx):
         num_cars = struct.unpack_from("<B", data, base)[0]
         if player_idx >= num_cars or num_cars == 0:
             return
-        # Compute per-car size dynamically — guards against F1 25 spec changes
-        per_car = (len(data) - HEADER_SIZE - 1) // num_cars
-        if per_car < 20:
-            return
+        # The packet body always has 22 car entries regardless of num_cars.
+        # Dividing by num_cars (e.g. 20) gives the wrong stride (49 instead of
+        # 45) and misaligns every field for player_idx > 0.
+        per_car = FINAL_CLASS_SIZE
         car_base = base + 1 + player_idx * per_car
         if len(data) < car_base + 20:
             return
