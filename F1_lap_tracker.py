@@ -811,6 +811,10 @@ def parse_car_damage_packet(data, player_idx):
         wear   = struct.unpack_from("<4f", data, base +  0)
         damage = struct.unpack_from("<4B", data, base + 16)
         valid  = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
+        # Debug: dump bytes +20 to +35 so we can identify the correct front-wing offset
+        raw_slice = list(data[base + 20 : base + 36])
+        print(f"[CarDamage] per_car={per_car} wear={[round(w,1) for w in wear]} "
+              f"tyreDmg={list(damage)} bytes+20..+35={raw_slice}")
         fw_dmg = [None, None]
         if len(data) >= base + 26:
             fw_dmg = list(struct.unpack_from("<2B", data, base + 24))
