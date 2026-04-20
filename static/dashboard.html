@@ -395,8 +395,8 @@ tr.comp-b-row td { background:rgba(247,164,76,.07); }
 /* Telemetry charts */
 .telem-wrap { display: flex; gap: 10px; align-items: flex-start; margin-top: 4px; }
 .telem-charts { flex: 1; min-width: 0; }
-.telem-gforce-wrap { width: 160px; flex-shrink: 0; }
-.telem-label { font-size: .6rem; letter-spacing: .1em; color: var(--muted); margin-bottom: 2px; }
+.telem-gforce-wrap { width: 220px; flex-shrink: 0; }
+.telem-label { font-size: .72rem; letter-spacing: .1em; color: var(--muted); margin-bottom: 4px; }
 
 /* Community leaderboard panel */
 .lb-wrap { padding-bottom: 8px; }
@@ -544,13 +544,13 @@ backdrop-filter: blur(4px);
           <div class="telem-wrap">
             <div class="telem-charts">
               <div class="telem-label">SPEED (km/h)</div>
-              <canvas id="speed-canvas" width="600" height="72" style="width:100%;display:block;"></canvas>
-              <div class="telem-label" style="margin-top:6px;">THROTTLE &amp; BRAKE</div>
-              <canvas id="inputs-canvas" width="600" height="56" style="width:100%;display:block;"></canvas>
+              <canvas id="speed-canvas" width="600" height="140" style="width:100%;display:block;"></canvas>
+              <div class="telem-label" style="margin-top:10px;">THROTTLE &amp; BRAKE</div>
+              <canvas id="inputs-canvas" width="600" height="100" style="width:100%;display:block;"></canvas>
             </div>
             <div class="telem-gforce-wrap">
               <div class="telem-label">G-FORCE</div>
-              <canvas id="gforce-canvas" width="160" height="160" style="display:block;width:100%;"></canvas>
+              <canvas id="gforce-canvas" width="220" height="220" style="display:block;width:100%;"></canvas>
             </div>
           </div>
         </div>
