@@ -409,45 +409,55 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
     # Build telemetry table if any laps have telem data
     telem_laps = [lap for lap in laps if lap.get("telem")]
     telem_section = ""
+    has_tyre_wear = any(lap.get("telem", {}).get("tyre_wear_fl") is not None for lap in telem_laps)
     if telem_laps:
-        th = "Lap | MaxSpd | AvgSpd | AvgThr% | FullThr% | AvgBrk% | HvyBrk% | MaxGLat"
+        th = "Lap | MaxSpd | AvgSpd | FullThr% | HvyBrk% | MaxGLat | AvgGear | MaxSteer"
+        if has_tyre_wear:
+            th += " | FL% | FR% | RL% | RR%"
         trows = []
         for lap in telem_laps:
             t = lap["telem"]
-            trows.append(
+            row = (
                 f"Lap {lap.get('lap_num', '?'):>3} | "
                 f"{t.get('max_speed', '—'):>6} | "
                 f"{t.get('avg_speed', '—'):>6} | "
-                f"{t.get('avg_throttle', '—'):>7} | "
                 f"{t.get('full_throttle_pct', '—'):>8} | "
-                f"{t.get('avg_brake', '—'):>7} | "
                 f"{t.get('heavy_brake_pct', '—'):>7} | "
-                f"{t.get('max_g_lat', '—'):>7}"
+                f"{t.get('max_g_lat', '—'):>7} | "
+                f"{t.get('avg_gear', '—'):>7} | "
+                f"{t.get('max_steer', '—'):>8}"
             )
+            if has_tyre_wear:
+                row += (
+                    f" | {t.get('tyre_wear_fl', '—'):>3}"
+                    f" | {t.get('tyre_wear_fr', '—'):>3}"
+                    f" | {t.get('tyre_wear_rl', '—'):>3}"
+                    f" | {t.get('tyre_wear_rr', '—'):>3}"
+                )
+            trows.append(row)
         telem_section = (
-            "\n\nTelemetry data (speed km/h, throttle/brake as %, G-force):\n"
+            "\n\nTelemetry (speed km/h, throttle/brake %, G-force, steer 0–1 scale, tyre wear %):\n"
             f"{th}\n" + "\n".join(trows)
         )
 
     has_telem = bool(telem_laps)
-    telem_instruction = (
-        " Where telemetry data is available, reference it specifically — "
-        "comment on top speed, throttle application (full-throttle %), "
-        "braking commitment (heavy-brake %), and peak lateral G as indicators of "
-        "driving style and corner technique. Cross-reference with sector times to "
-        "pinpoint where time is being lost."
+    telem_note = (
+        " Use the telemetry to go beyond lap times — call out where full-throttle percentage "
+        "or heavy braking suggests time is being left on the table, and whether tyre wear "
+        "patterns point to an underlying setup or driving style issue."
         if has_telem else ""
     )
 
     prompt = (
-        "You are a Formula 1 race engineer giving a post-session debrief to a sim racing driver.\n"
-        "Analyse the lap and telemetry data below and give a concise, insightful debrief (3–5 short paragraphs).\n"
-        "Cover: pace consistency, sector weaknesses, tyre compound performance, best lap analysis, "
-        f"and one actionable recommendation for the next session.{telem_instruction}\n"
-        "Use F1 engineering language. Be direct. Interpret the numbers — do not just repeat them.\n\n"
+        "You are a blunt, plain-speaking F1 race engineer debriefing a sim driver. "
+        "Write 2–3 short paragraphs — no bullet points, no sub-headings, no filler opener. "
+        "Talk like you're standing next to the driver in the garage: direct, specific, and honest. "
+        "Pick out what actually matters: is the pace consistent or scattered, where are sectors "
+        "being lost, how are the tyres behaving across the stint, and what is the one thing to "
+        f"address before the next session.{telem_note} "
+        "Interpret the numbers — don't recite them. Keep the whole debrief under 180 words.\n\n"
         f"Session: {track} — {sess_type} — {weather}\n"
-        f"Session Best: {best_time}\n"
-        f"Track PB: {pb_time}{pb_suffix}\n"
+        f"Session best: {best_time}   Track PB: {pb_time}{pb_suffix}\n"
         f"Total laps: {len(laps)}\n\n"
         f"Lap data:\n{header}\n" + "\n".join(rows) + telem_section
     )
@@ -463,8 +473,8 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
     aoai_url     = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01"
     aoai_payload = json.dumps({
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 800,
-        "temperature": 0.7,
+        "max_tokens": 500,
+        "temperature": 0.75,
     }).encode()
 
     aoai_req = _urllib.Request(
