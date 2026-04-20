@@ -1134,8 +1134,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif parsed.path == "/api/career":
             recent = db_get_recent_races()
-            with state_lock:
-                stats = dict(state["career_stats"])
+            stats  = db_get_career_stats()
             payload = json.dumps({"stats": stats, "recent": recent}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
