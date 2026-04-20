@@ -108,9 +108,10 @@ state = {
     "race_result": None,               # populated when Final Classification packet (ID 8) arrives
     "player_fastest_lap": False,       # set True when FTLP event fires for the player
     "race_result_saved_sid": None,     # session ID for which race result was already saved
-    "tyre_wear":     [None, None, None, None],  # [RL, RR, FL, FR] float % from Car Damage packet
-    "tyre_damage":   [None, None, None, None],  # [RL, RR, FL, FR] uint8 % structural damage
-    "tyre_age_laps": None,                      # laps on current tyre set (from Car Status)
+    "tyre_wear":         [None, None, None, None],  # [RL, RR, FL, FR] float % from Car Damage packet
+    "tyre_damage":       [None, None, None, None],  # [RL, RR, FL, FR] uint8 % structural damage
+    "front_wing_damage": [None, None],              # [left, right] uint8 % front wing damage
+    "tyre_age_laps":     None,                      # laps on current tyre set (from Car Status)
 }
 
 TRACK_IDS = {
@@ -655,13 +656,15 @@ def parse_lap_data_packet(data, player_idx):
         # Compute aggregate telemetry stats from the trace and store in lap record
         if saved_trace:
             n = len(saved_trace)
-            max_spd  = max(p["speed"]              for p in saved_trace)
-            avg_spd  = sum(p["speed"]              for p in saved_trace) / n
-            avg_thr  = sum(p["throttle"]           for p in saved_trace) / n * 100
-            ft_pct   = sum(1 for p in saved_trace if p["throttle"] >= 0.95) / n * 100
-            avg_brk  = sum(p["brake"]              for p in saved_trace) / n * 100
-            hb_pct   = sum(1 for p in saved_trace if p["brake"] >= 0.5)  / n * 100
-            max_g    = max(abs(p.get("gLat", 0))   for p in saved_trace)
+            max_spd   = max(p["speed"]                    for p in saved_trace)
+            avg_spd   = sum(p["speed"]                    for p in saved_trace) / n
+            avg_thr   = sum(p["throttle"]                 for p in saved_trace) / n * 100
+            ft_pct    = sum(1 for p in saved_trace if p["throttle"] >= 0.95) / n * 100
+            avg_brk   = sum(p["brake"]                    for p in saved_trace) / n * 100
+            hb_pct    = sum(1 for p in saved_trace if p["brake"] >= 0.5)  / n * 100
+            max_g     = max(abs(p.get("gLat", 0))         for p in saved_trace)
+            avg_gear  = sum(p.get("gear", 0)              for p in saved_trace) / n
+            max_steer = max(abs(p.get("steer", 0))        for p in saved_trace)
             lap_record["telem"] = {
                 "max_speed":         round(max_spd),
                 "avg_speed":         round(avg_spd),
@@ -670,7 +673,16 @@ def parse_lap_data_packet(data, player_idx):
                 "avg_brake":         round(avg_brk),
                 "heavy_brake_pct":   round(hb_pct),
                 "max_g_lat":         round(max_g, 2),
+                "avg_gear":          round(avg_gear, 1),
+                "max_steer":         round(max_steer, 2),
             }
+            # Capture tyre wear at lap completion (FL, FR, RL, RR)
+            tw = state.get("tyre_wear", [None, None, None, None])
+            if any(v is not None for v in tw):
+                lap_record["telem"]["tyre_wear_fl"] = round(tw[2]) if tw[2] is not None else None
+                lap_record["telem"]["tyre_wear_fr"] = round(tw[3]) if tw[3] is not None else None
+                lap_record["telem"]["tyre_wear_rl"] = round(tw[0]) if tw[0] is not None else None
+                lap_record["telem"]["tyre_wear_rr"] = round(tw[1]) if tw[1] is not None else None
 
         if save_session_id is not None:
             db_save_lap(save_session_id, lap_record, trace=saved_trace)
@@ -794,15 +806,20 @@ def parse_car_damage_packet(data, player_idx):
         base = HEADER_SIZE + player_idx * per_car
         if len(data) < base + 20:
             return
-        # +0  tyresWear[4]   4 × float  (RL, RR, FL, FR)
-        # +16 tyresDamage[4] 4 × uint8  (RL, RR, FL, FR)
+        # +0  tyresWear[4]        4 × float  (RL, RR, FL, FR)
+        # +16 tyresDamage[4]     4 × uint8  (RL, RR, FL, FR)
+        # +24 frontLeftWingDamage  uint8
+        # +25 frontRightWingDamage uint8
         wear   = struct.unpack_from("<4f", data, base +  0)
         damage = struct.unpack_from("<4B", data, base + 16)
-        # Clamp to valid range; reject obviously wrong values from bad offsets
-        valid = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
+        valid  = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
+        fw_dmg = [None, None]
+        if len(data) >= base + 26:
+            fw_dmg = list(struct.unpack_from("<2B", data, base + 24))
         with state_lock:
-            state["tyre_wear"]   = valid
-            state["tyre_damage"] = list(damage)
+            state["tyre_wear"]          = valid
+            state["tyre_damage"]        = list(damage)
+            state["front_wing_damage"]  = fw_dmg  # [left, right] 0-100
     except Exception as e:
         log.debug("parse_car_damage: %s", e)
 

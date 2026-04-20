@@ -400,7 +400,7 @@ tr.comp-b-row td { background:rgba(247,164,76,.07); }
 .telem-wrap { display: flex; gap: 10px; align-items: flex-start; margin-top: 4px; }
 .telem-charts { flex: 1; min-width: 0; }
 .telem-gforce-wrap { width: 220px; flex-shrink: 0; }
-.telem-label { font-size: .72rem; letter-spacing: .1em; color: var(--muted); margin-bottom: 4px; }
+.telem-label { font-size: .72rem; letter-spacing: .1em; color: #bbb; margin-bottom: 4px; }
 
 /* Community leaderboard panel */
 .lb-wrap { padding-bottom: 8px; }
@@ -461,7 +461,7 @@ backdrop-filter: blur(4px);
 #track-canvas { border-radius:8px; background:transparent; }
 .map-mode-btn {
   font-size: .52rem; padding: 3px 8px; border-radius: 5px; cursor: pointer;
-  background: var(--glass); border: 1px solid var(--glass-border); color: var(--muted);
+  background: var(--glass); border: 1px solid var(--glass-border); color: #ccc;
   font-family: 'Share Tech Mono', monospace; letter-spacing: .06em;
   transition: border-color .2s, color .2s, background .2s;
 }
@@ -1338,84 +1338,150 @@ function compoundPill(c) {
   return `<span class="cpill cpill-${abbr}">${abbr}</span>`;
 }
 
-// ── Tyre wear diagram ─────────────────────────────────────────────────────────
-function _twc(w) {  // tyre wear colour
-  if (w === null || w === undefined) return '#1e1e1e';
+// ── Tyre wear / damage diagram ─────────────────────────────────────────────────
+function _twc(w) {  // tyre wear fill colour
+  if (w === null || w === undefined) return 'rgba(255,255,255,.06)';
   if (w < 25) return '#00d68f';
   if (w < 50) return '#ffd700';
   if (w < 75) return '#ff8c00';
   return '#e10600';
 }
-function _twt(w) {  // tyre text colour
+function _tdc(d) {  // tyre damage border colour
+  if (d === null || d === undefined || d < 10) return 'rgba(255,255,255,.22)';
+  if (d < 30) return '#ffd700';
+  if (d < 60) return '#ff8c00';
+  return '#e10600';
+}
+function _twt(w) {  // tyre text colour (unused but kept for compat)
   if (w === null || w === undefined) return '#444';
   return w < 50 ? '#000' : '#fff';
 }
 
 function renderTyreDiagram(d) {
-  const wear = d.tyre_wear || [null, null, null, null]; // [RL, RR, FL, FR]
-  if (wear.every(v => v === null)) return '';
-  const fl = wear[2], fr = wear[3], rl = wear[0], rr = wear[1];
-  const pct = v => v !== null ? Math.round(v) + '%' : '—';
+  const wear   = d.tyre_wear         || [null, null, null, null]; // [RL, RR, FL, FR]
+  const damage = d.tyre_damage       || [null, null, null, null]; // [RL, RR, FL, FR]
+  const fwd    = d.front_wing_damage || [null, null];             // [left, right]
+  if (wear.every(v => v === null) && damage.every(v => v === null)) return '';
+  const fl = wear[2],   fr = wear[3],   rl = wear[0],   rr = wear[1];
+  const dfl = damage[2] || 0, dfr = damage[3] || 0, drl = damage[0] || 0, drr = damage[1] || 0;
+  const fwL = fwd[0] || 0, fwR = fwd[1] || 0;
+  const hasDamage = [dfl,dfr,drl,drr,fwL,fwR].some(v => v >= 10);
+  // Damage overlay: semi-transparent red fill, opacity = damage/100 * 0.65
+  const dmgFill = v => `rgba(225,6,0,${Math.min(v / 100 * 0.70, 0.70).toFixed(2)})`;
+  // Front wing panel fill: blend damage red into the base panel colour
+  const wingFill = v => v >= 10
+    ? `rgba(225,6,0,${Math.min(v / 100 * 0.55, 0.55).toFixed(2)})`
+    : 'rgba(255,255,255,.11)';
   const age = d.tyre_age_laps != null
-    ? `<div style="text-align:center;font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-top:4px">${d.tyre_age_laps} LAP${d.tyre_age_laps !== 1 ? 'S' : ''} ON SET</div>`
+    ? `<div style="text-align:center;font-size:.55rem;color:var(--muted);letter-spacing:.1em;margin-top:2px">${d.tyre_age_laps} LAP${d.tyre_age_laps !== 1 ? 'S' : ''} ON SET</div>`
     : '';
-  // Inline SVG top-down F1 car — front at top, rear at bottom
-  // Rear tyres wider than front; full wing elements for authenticity
-  const svg = `<svg viewBox="0 0 220 310" width="100%" style="display:block;max-width:200px;margin:0 auto">
-    <!-- FRONT WING end plates -->
-    <rect x="5"   y="0" width="9" height="22" rx="3" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
-    <rect x="206" y="0" width="9" height="22" rx="3" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
-    <!-- FRONT WING main plane -->
-    <rect x="14" y="7" width="192" height="8" rx="2" fill="rgba(255,255,255,.11)" stroke="rgba(255,255,255,.2)" stroke-width="1"/>
-    <rect x="22" y="13" width="176" height="4" rx="1" fill="rgba(255,255,255,.06)"/>
+  const legend = `<div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:5px;flex-wrap:wrap;">
+    <span style="font-size:.5rem;color:var(--muted);letter-spacing:.05em;">WEAR</span>
+    <span style="display:inline-flex;gap:2px;">
+      <span style="width:8px;height:8px;background:#00d68f;border-radius:2px;display:inline-block;"></span>
+      <span style="width:8px;height:8px;background:#ffd700;border-radius:2px;display:inline-block;"></span>
+      <span style="width:8px;height:8px;background:#ff8c00;border-radius:2px;display:inline-block;"></span>
+      <span style="width:8px;height:8px;background:#e10600;border-radius:2px;display:inline-block;"></span>
+    </span>
+    ${hasDamage ? `<span style="font-size:.5rem;color:#e10600;letter-spacing:.05em;margin-left:6px;">▲ DAMAGE</span>` : ''}
+  </div>`;
+  const svg = `<svg viewBox="0 0 220 330" width="100%" style="display:block;max-width:200px;margin:0 auto">
 
-    <!-- NOSE CONE -->
-    <path d="M 91,22 L 129,22 L 120,52 L 100,52 Z" fill="rgba(255,255,255,.10)" stroke="rgba(255,255,255,.17)" stroke-width="1.2"/>
+    <!-- ═══ FRONT WING ═══ -->
+    <!-- Endplates -->
+    <rect x="9"   y="2"  width="8"  height="20" rx="2" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
+    <rect x="203" y="2"  width="8"  height="20" rx="2" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
+    <!-- Main plane (angled panels — tinted red when damaged) -->
+    <path d="M 17,16 L 100,26 L 100,20 L 17,8 Z"  fill="${wingFill(fwL)}" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
+    <path d="M 203,16 L 120,26 L 120,20 L 203,8 Z" fill="${wingFill(fwR)}" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
+    <!-- Flap detail lines -->
+    <line x1="18"  y1="19" x2="99"  y2="24" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+    <line x1="202" y1="19" x2="121" y2="24" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+    <!-- Camera pod / T-cam strut -->
+    <rect x="106" y="4"  width="8"  height="24" rx="2" fill="rgba(255,255,255,.16)" stroke="rgba(255,255,255,.2)" stroke-width="1"/>
 
-    <!-- FRONT TYRES (narrower) -->
-    <rect x="13"  y="26" width="34" height="58" rx="8" fill="${_twc(fl)}" stroke="rgba(255,255,255,.28)" stroke-width="1.5"/>
-    <text x="30"  y="51" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fl)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(fl)}</text>
-    <text x="30"  y="76" text-anchor="middle" fill="rgba(255,255,255,.5)" font-size="9" font-family="monospace">FL</text>
-    <rect x="173" y="26" width="34" height="58" rx="8" fill="${_twc(fr)}" stroke="rgba(255,255,255,.28)" stroke-width="1.5"/>
-    <text x="190" y="51" text-anchor="middle" dominant-baseline="middle" fill="${_twt(fr)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(fr)}</text>
-    <text x="190" y="76" text-anchor="middle" fill="rgba(255,255,255,.5)" font-size="9" font-family="monospace">FR</text>
+    <!-- ═══ NOSE CONE ═══ -->
+    <path d="M 98,26 L 122,26 L 115,62 L 105,62 Z" fill="rgba(255,255,255,.10)" stroke="rgba(255,255,255,.17)" stroke-width="1.2"/>
 
-    <!-- CAR BODY -->
-    <path d="M 84,22 C 68,35 58,56 55,80 L 53,112 L 53,152 C 53,167 56,180 63,192 L 67,212 L 70,242 L 76,262 L 90,268 L 130,268 L 144,262 L 150,242 L 153,212 L 157,192 C 164,180 167,167 167,152 L 167,112 L 165,80 C 162,56 152,35 136,22 Z"
+    <!-- ═══ FRONT SUSPENSION WISHBONES ═══ -->
+    <!-- FL upper / lower arms + upright -->
+    <line x1="47" y1="76"  x2="105" y2="66" stroke="rgba(255,255,255,.17)" stroke-width="1.2"/>
+    <line x1="47" y1="86"  x2="105" y2="74" stroke="rgba(255,255,255,.17)" stroke-width="1.2"/>
+    <rect x="42"  y="73"  width="8"  height="16" rx="1" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.14)" stroke-width="1"/>
+    <!-- FR upper / lower arms + upright -->
+    <line x1="173" y1="76" x2="115" y2="66" stroke="rgba(255,255,255,.17)" stroke-width="1.2"/>
+    <line x1="173" y1="86" x2="115" y2="74" stroke="rgba(255,255,255,.17)" stroke-width="1.2"/>
+    <rect x="170"  y="73" width="8"  height="16" rx="1" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.14)" stroke-width="1"/>
+
+    <!-- ═══ FRONT TYRES ═══  base=wear fill, overlay=damage fill -->
+    <rect x="13"  y="64" width="32" height="56" rx="8" fill="${_twc(fl)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${dfl >= 5 ? `<rect x="13" y="64" width="32" height="56" rx="8" fill="${dmgFill(dfl)}"/>` : ''}
+    <circle cx="29"  cy="92" r="4" fill="rgba(0,0,0,.35)"/>
+    <rect x="175" y="64" width="32" height="56" rx="8" fill="${_twc(fr)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${dfr >= 5 ? `<rect x="175" y="64" width="32" height="56" rx="8" fill="${dmgFill(dfr)}"/>` : ''}
+    <circle cx="191" cy="92" r="4" fill="rgba(0,0,0,.35)"/>
+
+    <!-- ═══ MAIN BODY ═══ -->
+    <path d="M 99,62
+             C 86,70 72,86 64,106
+             L 56,132 L 53,158 L 53,178
+             C 53,194 57,210 64,222
+             L 68,242 L 70,264 L 75,280
+             L 90,286 L 130,286 L 145,280
+             L 150,264 L 152,242 L 156,222
+             C 163,210 167,194 167,178
+             L 167,158 L 164,132 L 156,106
+             C 148,86 134,70 121,62 Z"
       fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.17)" stroke-width="1.5"/>
 
-    <!-- SIDEPODS -->
-    <rect x="46"  y="100" width="25" height="56" rx="6" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
-    <rect x="149" y="100" width="25" height="56" rx="6" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+    <!-- Bargeboard / floor edges visible from above -->
+    <path d="M 56,134 L 46,142 L 46,172 L 56,180" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="1.2"/>
+    <path d="M 164,134 L 174,142 L 174,172 L 164,180" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="1.2"/>
 
-    <!-- COCKPIT / HALO -->
-    <ellipse cx="110" cy="128" rx="16" ry="29" fill="rgba(0,0,0,.55)" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
-    <path d="M 97,109 Q 110,102 123,109" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="2.5"/>
+    <!-- ═══ WING MIRRORS ═══ -->
+    <path d="M 68,132 L 59,126 L 57,134 L 68,140 Z" fill="rgba(255,255,255,.11)" stroke="rgba(255,255,255,.16)" stroke-width="1"/>
+    <path d="M 152,132 L 161,126 L 163,134 L 152,140 Z" fill="rgba(255,255,255,.11)" stroke="rgba(255,255,255,.16)" stroke-width="1"/>
 
-    <!-- ENGINE COVER bump -->
-    <ellipse cx="110" cy="183" rx="19" ry="19" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+    <!-- ═══ COCKPIT / HALO ═══ -->
+    <ellipse cx="110" cy="146" rx="17" ry="28" fill="rgba(0,0,0,.65)" stroke="rgba(255,255,255,.13)" stroke-width="1"/>
+    <!-- Halo arch -->
+    <path d="M 96,127 Q 110,119 124,127" fill="none" stroke="rgba(255,255,255,.30)" stroke-width="2.5"/>
 
-    <!-- REAR TYRES (wider than front) -->
-    <rect x="10"  y="194" width="40" height="72" rx="9" fill="${_twc(rl)}" stroke="rgba(255,255,255,.28)" stroke-width="1.5"/>
-    <text x="30"  y="226" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rl)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(rl)}</text>
-    <text x="30"  y="257" text-anchor="middle" fill="rgba(255,255,255,.5)" font-size="9" font-family="monospace">RL</text>
-    <rect x="170" y="194" width="40" height="72" rx="9" fill="${_twc(rr)}" stroke="rgba(255,255,255,.28)" stroke-width="1.5"/>
-    <text x="190" y="226" text-anchor="middle" dominant-baseline="middle" fill="${_twt(rr)}" font-size="12" font-weight="700" font-family="'Share Tech Mono',monospace">${pct(rr)}</text>
-    <text x="190" y="257" text-anchor="middle" fill="rgba(255,255,255,.5)" font-size="9" font-family="monospace">RR</text>
+    <!-- ═══ ENGINE COVER / BODYWORK ═══ -->
+    <ellipse cx="110" cy="192" rx="20" ry="20" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+    <!-- Centre spine -->
+    <line x1="110" y1="174" x2="110" y2="244" stroke="rgba(255,255,255,.06)" stroke-width="2"/>
+    <!-- T-tray panel detail -->
+    <path d="M 88,214 L 132,214 L 132,220 L 120,220 L 120,234 L 100,234 L 100,220 L 88,220 Z"
+      fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
 
-    <!-- REAR DIFFUSER -->
-    <rect x="70" y="263" width="80" height="13" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+    <!-- ═══ REAR SUSPENSION WISHBONES ═══ -->
+    <line x1="51"  y1="252" x2="73"  y2="246" stroke="rgba(255,255,255,.14)" stroke-width="1.2"/>
+    <line x1="51"  y1="262" x2="73"  y2="258" stroke="rgba(255,255,255,.14)" stroke-width="1.2"/>
+    <line x1="169" y1="252" x2="147" y2="246" stroke="rgba(255,255,255,.14)" stroke-width="1.2"/>
+    <line x1="169" y1="262" x2="147" y2="258" stroke="rgba(255,255,255,.14)" stroke-width="1.2"/>
 
-    <!-- REAR WING end plates -->
-    <rect x="14"  y="277" width="9" height="22" rx="3" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
-    <rect x="197" y="277" width="9" height="22" rx="3" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.22)" stroke-width="1"/>
-    <!-- REAR WING main plane -->
-    <rect x="23"  y="281" width="174" height="8" rx="2" fill="rgba(255,255,255,.11)" stroke="rgba(255,255,255,.2)" stroke-width="1"/>
-    <rect x="30"  y="287" width="160" height="4" rx="1" fill="rgba(255,255,255,.06)"/>
+    <!-- ═══ REAR TYRES (wider than front) ═══ -->
+    <rect x="9"   y="236" width="40" height="70" rx="9" fill="${_twc(rl)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${drl >= 5 ? `<rect x="9" y="236" width="40" height="70" rx="9" fill="${dmgFill(drl)}"/>` : ''}
+    <circle cx="29"  cy="271" r="5" fill="rgba(0,0,0,.35)"/>
+    <rect x="171" y="236" width="40" height="70" rx="9" fill="${_twc(rr)}" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+    ${drr >= 5 ? `<rect x="171" y="236" width="40" height="70" rx="9" fill="${dmgFill(drr)}"/>` : ''}
+    <circle cx="191" cy="271" r="5" fill="rgba(0,0,0,.35)"/>
+
+    <!-- ═══ REAR DIFFUSER ═══ -->
+    <rect x="70"  y="280" width="80" height="12" rx="3" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+    <rect x="86"  y="291" width="48" height="8"  rx="2" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.10)" stroke-width="1"/>
+
+    <!-- ═══ REAR WING ═══ -->
+    <rect x="14"  y="307" width="8"   height="20" rx="2" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.20)" stroke-width="1"/>
+    <rect x="198" y="307" width="8"   height="20" rx="2" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.20)" stroke-width="1"/>
+    <rect x="22"  y="311" width="176" height="8"  rx="2" fill="rgba(255,255,255,.11)" stroke="rgba(255,255,255,.20)" stroke-width="1"/>
+    <rect x="28"  y="317" width="164" height="4"  rx="1" fill="rgba(255,255,255,.06)"/>
   </svg>`;
   return `<div style="margin-top:10px;">
-    <div class="telem-label">TYRE WEAR</div>
-    <div class="tyre-svg-wrap">${svg}${age}</div>
+    <div class="telem-label">TYRE STATUS</div>
+    <div class="tyre-svg-wrap">${svg}${age}${legend}</div>
   </div>`;
 }
 
@@ -1624,7 +1690,7 @@ function _renderSpeedChart(traceA, traceB = null, sfx = '') {
     const y = pad.t + ch - ((v - minS) / rng) * ch;
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.60)'; ctx.font = '8px monospace';
     ctx.fillText(v, 0, y + 3);
   }
 
@@ -1769,7 +1835,7 @@ function _renderGForceChartImpl(traceA, traceB, sfx = '') {
     ctx.strokeStyle = g === 3 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)';
     ctx.lineWidth = g === 3 ? 1.5 : 1;
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '8px monospace';
     ctx.fillText(`${g}G`, cx + scale * g / maxG + 2, cy - 2);
   }
 
@@ -1779,7 +1845,7 @@ function _renderGForceChartImpl(traceA, traceB, sfx = '') {
   ctx.beginPath(); ctx.moveTo(4, cy); ctx.lineTo(w - 4, cy); ctx.stroke();
 
   // Axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '7px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '7px monospace';
   ctx.fillText('LAT', w - 20, cy - 3);
   ctx.fillText('LON', cx + 3, 10);
 
@@ -1882,7 +1948,7 @@ function _renderGearChart(traceA, traceB = null, sfx = '') {
   drawGearTrace(traceA, 'rgba(225,6,0,0.12)', '#e10600');
 
   // Y-axis gear labels
-  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.60)'; ctx.font = '8px monospace';
   for (let g = 2; g <= MAX_GEAR; g += 2) {
     const y = pad.t + ch - (g / MAX_GEAR) * ch;
     ctx.fillText(g, 0, y + 3);
@@ -1920,7 +1986,7 @@ function _renderSteerChart(traceA, traceB = null, sfx = '') {
   ctx.beginPath(); ctx.moveTo(pad.l, cy); ctx.lineTo(pad.l + cw, cy); ctx.stroke();
 
   // Y-axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.60)'; ctx.font = '8px monospace';
   ctx.fillText('L', 0, pad.t + 9);
   ctx.fillText('R', 0, pad.t + ch);
 
