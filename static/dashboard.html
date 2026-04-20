@@ -532,11 +532,35 @@ backdrop-filter: blur(4px);
   </aside>
   <div class="main-col">
     <div class="tab-bar">
-      <button class="tab active" id="tab-btn-session" onclick="switchTab('session')">SESSION</button>
+      <button class="tab active" id="tab-btn-race" onclick="switchTab('race')">RACE</button>
+      <button class="tab" id="tab-btn-session" onclick="switchTab('session')">SESSION</button>
       <button class="tab" id="tab-btn-career" onclick="switchTab('career')">CAREER</button>
       <button class="tab" id="tab-btn-leaderboard" onclick="switchTab('leaderboard')">LEADERBOARD</button>
     </div>
-    <div id="tab-session">
+    <div id="tab-race">
+      <div id="telemetry-section" style="display:none;">
+        <div class="panel">
+          <div class="panel-title" id="telem-title">Telemetry</div>
+          <div class="telem-wrap">
+            <div class="telem-charts">
+              <div class="telem-label">SPEED (km/h)</div>
+              <canvas id="speed-canvas" width="600" height="72" style="width:100%;display:block;"></canvas>
+              <div class="telem-label" style="margin-top:6px;">THROTTLE &amp; BRAKE</div>
+              <canvas id="inputs-canvas" width="600" height="56" style="width:100%;display:block;"></canvas>
+            </div>
+            <div class="telem-gforce-wrap">
+              <div class="telem-label">G-FORCE</div>
+              <canvas id="gforce-canvas" width="160" height="160" style="display:block;width:100%;"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="race-waiting" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:220px;color:var(--muted);font-size:.8rem;letter-spacing:.1em;">
+        <div style="font-size:2.5rem;margin-bottom:14px;">🏎</div>
+        Waiting for live telemetry&hellip;
+      </div>
+    </div><!-- end tab-race -->
+    <div id="tab-session" style="display:none">
     <div id="comp-bar">
       <span class="comp-tag-a" id="comp-label-a">A: —</span>
       <span style="color:var(--muted)">vs</span>
@@ -544,23 +568,6 @@ backdrop-filter: blur(4px);
       <button onclick="clearComparison()" style="margin-left:auto;font-size:.6rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;">CLEAR</button>
     </div>
     <div id="lap-table"></div>
-    <div id="telemetry-section" style="display:none;margin-top:12px;">
-      <div class="panel">
-        <div class="panel-title" id="telem-title">Telemetry</div>
-        <div class="telem-wrap">
-          <div class="telem-charts">
-            <div class="telem-label">SPEED (km/h)</div>
-            <canvas id="speed-canvas" width="600" height="72" style="width:100%;display:block;"></canvas>
-            <div class="telem-label" style="margin-top:6px;">THROTTLE &amp; BRAKE</div>
-            <canvas id="inputs-canvas" width="600" height="56" style="width:100%;display:block;"></canvas>
-          </div>
-          <div class="telem-gforce-wrap">
-            <div class="telem-label">G-FORCE</div>
-            <canvas id="gforce-canvas" width="160" height="160" style="display:block;width:100%;"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
     <div id="debrief-section"></div>
     </div><!-- end tab-session -->
     <div id="tab-career" style="display:none">
@@ -594,6 +601,7 @@ backdrop-filter: blur(4px);
 <script>
 // ── Tab system ────────────────────────────────────────────────────────────────
 function switchTab(name) {
+  document.getElementById('tab-race').style.display        = name === 'race'        ? '' : 'none';
   document.getElementById('tab-session').style.display     = name === 'session'     ? '' : 'none';
   document.getElementById('tab-career').style.display      = name === 'career'      ? '' : 'none';
   document.getElementById('tab-leaderboard').style.display = name === 'leaderboard' ? '' : 'none';
@@ -1452,8 +1460,14 @@ const _SECTOR_PALETTE = ['#e10600', '#f7c948', '#9b59b6'];
 
 function renderTelemetry(traceA, traceB = null) {
   const sec = document.getElementById('telemetry-section');
-  if (!traceA || traceA.length < 2) { sec.style.display = 'none'; return; }
+  const waiting = document.getElementById('race-waiting');
+  if (!traceA || traceA.length < 2) {
+    sec.style.display = 'none';
+    if (waiting) waiting.style.display = 'flex';
+    return;
+  }
   sec.style.display = 'block';
+  if (waiting) waiting.style.display = 'none';
   const title = document.getElementById('telem-title');
   if (title) {
     if (traceB && traceB.length >= 2 && _compareA !== null && _compareB !== null) {
