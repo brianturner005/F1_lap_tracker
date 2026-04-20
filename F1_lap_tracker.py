@@ -811,12 +811,12 @@ def parse_car_damage_packet(data, player_idx):
         wear   = struct.unpack_from("<4f", data, base +  0)
         damage = struct.unpack_from("<4B", data, base + 16)
         valid  = [round(w, 1) if 0.0 <= w <= 100.0 else None for w in wear]
-        # Debug: dump full remaining bytes +20..+45 (per_car=46 in F1 25)
-        raw_slice = list(data[base + 20 : base + per_car])
-        print(f"[CarDamage] per_car={per_car} tyreDmg={list(damage)} bytes+20..+{per_car-1}={raw_slice}")
+        # F1 25 (per_car=46) inserted 4 bytes at +24..+27 shifting wing damage
+        # to +28/+29. F1 24 (per_car=41) had it at +24/+25.
+        fw_off = 28 if per_car >= 46 else 24
         fw_dmg = [None, None]
-        if len(data) >= base + 26:
-            fw_dmg = list(struct.unpack_from("<2B", data, base + 24))
+        if len(data) >= base + fw_off + 2:
+            fw_dmg = list(struct.unpack_from("<2B", data, base + fw_off))
         with state_lock:
             state["tyre_wear"]          = valid
             state["tyre_damage"]        = list(damage)
