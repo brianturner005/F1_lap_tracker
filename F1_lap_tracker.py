@@ -356,11 +356,11 @@ def db_get_career_stats():
     row = con.execute("""
         SELECT
             COUNT(*)                                                      AS races,
-            SUM(CASE WHEN position = 1 AND result_status = 3 THEN 1 ELSE 0 END) AS wins,
-            SUM(CASE WHEN position <= 3 AND result_status = 3 THEN 1 ELSE 0 END) AS podiums,
-            SUM(points)                                                   AS points,
-            SUM(fastest_lap)                                              AS fastest_laps,
-            SUM(CASE WHEN result_status IN (4,7) THEN 1 ELSE 0 END)      AS dnfs
+            SUM(CASE WHEN position = 1  AND result_status IN (2,3) THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN position <= 3 AND result_status IN (2,3) THEN 1 ELSE 0 END) AS podiums,
+            SUM(points)                                                        AS points,
+            SUM(fastest_lap)                                                   AS fastest_laps,
+            SUM(CASE WHEN result_status IN (4,7) THEN 1 ELSE 0 END)           AS dnfs
         FROM race_results
     """).fetchone()
     con.close()
@@ -876,10 +876,12 @@ def parse_final_classification_packet(data, player_idx):
         total_time_s  = struct.unpack_from("<d", data, car_base + 10)[0]
         best_lap_str  = ms_to_laptime(best_lap_ms) if best_lap_ms > 0 else "—"
 
-        # Only save when the race is actually over — status must be Finished,
-        # DNF, DSQ, N/C, or Retired. Ignore Invalid/Inactive/Active packets
-        # which the game sends during formation lap and mid-race.
-        FINAL_STATUSES = {3, 4, 5, 6, 7}  # Finished, DNF, DSQ, N/C, Retired
+        # Only save when the race is actually over. Status 2 ("Active") is
+        # included because F1 25 reports classified finishers (including DNFs
+        # from crashes) as Active rather than Finished/Retired in many cases.
+        # Status 0 (Invalid) and 1 (Inactive) are still ignored — those are
+        # formation-lap / pre-race placeholders.
+        FINAL_STATUSES = {2, 3, 4, 5, 6, 7}  # Active, Finished, DNF, DSQ, N/C, Retired
         print(f"[Final Classification] raw: status={result_status} pos={position} "
               f"laps={num_laps} best={best_lap_str}")
         if result_status not in FINAL_STATUSES:
