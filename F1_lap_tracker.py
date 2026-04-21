@@ -860,12 +860,11 @@ def parse_final_classification_packet(data, player_idx):
         num_cars = struct.unpack_from("<B", data, base)[0]
         if player_idx >= num_cars or num_cars == 0:
             return
-        # The packet body always has 22 car entries regardless of num_cars.
-        # Dividing by num_cars (e.g. 20) gives the wrong stride (49 instead of
-        # 45) and misaligns every field for player_idx > 0.
-        per_car = FINAL_CLASS_SIZE
-        # Infer actual stride from packet length to detect F1 25 spec changes.
+        # Infer the per-car stride from packet length (22 entries always present).
+        # F1 24 = 45 bytes/car, F1 25 = 46 bytes/car. Using the inferred value
+        # avoids the 1-byte-per-car drift that corrupts reads for higher car indices.
         inferred_per_car = (len(data) - base - 1) // 22
+        per_car = inferred_per_car if inferred_per_car >= FINAL_CLASS_SIZE else FINAL_CLASS_SIZE
         car_base = base + 1 + player_idx * per_car
         if len(data) < car_base + 20:
             return
@@ -878,11 +877,8 @@ def parse_final_classification_packet(data, player_idx):
         total_time_s  = struct.unpack_from("<d", data, car_base + 10)[0]
         best_lap_str  = ms_to_laptime(best_lap_ms) if best_lap_ms > 0 else "—"
 
-        raw = list(data[car_base: car_base + min(20, len(data) - car_base)])
-        print(f"[Final Classification] pkt_len={len(data)} player_idx={player_idx} "
-              f"num_cars={num_cars} per_car_assumed={per_car} inferred={inferred_per_car} "
-              f"raw[0..19]={raw}")
-        print(f"[Final Classification] raw: status={result_status} pos={position} "
+        print(f"[Final Classification] pkt_len={len(data)} per_car={per_car} "
+              f"player_idx={player_idx} status={result_status} pos={position} "
               f"laps={num_laps} best={best_lap_str}")
 
         # Only save when the race is actually over. Status 2 ("Active") is
