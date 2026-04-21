@@ -207,11 +207,16 @@ def init_db():
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         )
     """)
-    # Migration: add trace column if upgrading from older DB
-    try:
-        con.execute("ALTER TABLE laps ADD COLUMN trace TEXT")
-    except Exception as e:
-        log.debug("DB migration (expected on existing DB): %s", e)
+    # Migrations — each ALTER TABLE is a no-op if the column already exists
+    for col_ddl in (
+        "ALTER TABLE laps ADD COLUMN trace TEXT",
+        "ALTER TABLE laps ADD COLUMN tyre_wear TEXT",
+        "ALTER TABLE laps ADD COLUMN tyre_damage TEXT",
+    ):
+        try:
+            con.execute(col_ddl)
+        except Exception as e:
+            log.debug("DB migration (expected on existing DB): %s", e)
     con.execute("""
         CREATE TABLE IF NOT EXISTS personal_bests (
             track        TEXT NOT NULL,
@@ -283,16 +288,19 @@ def db_close_session(session_id):
     con.commit()
     con.close()
 
-def db_save_lap(session_id, lap, trace=None):
+def db_save_lap(session_id, lap, trace=None, tyre_wear=None, tyre_damage=None):
     con = sqlite3.connect(DB_PATH)
     con.execute(
         """INSERT INTO laps
-           (session_id, lap_num, lap_time_ms, lap_time, s1_ms, s2_ms, s3_ms, invalid, timestamp, compound, trace)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           (session_id, lap_num, lap_time_ms, lap_time, s1_ms, s2_ms, s3_ms,
+            invalid, timestamp, compound, trace, tyre_wear, tyre_damage)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (session_id, lap["lap_num"], lap["lap_time_ms"], lap["lap_time"],
          lap["s1_ms"], lap["s2_ms"], lap["s3_ms"], int(lap["invalid"]),
          lap["timestamp"], lap.get("compound"),
-         json.dumps(trace) if trace else None)
+         json.dumps(trace) if trace else None,
+         json.dumps(tyre_wear) if tyre_wear else None,
+         json.dumps(tyre_damage) if tyre_damage else None)
     )
     con.commit()
     con.close()
@@ -646,12 +654,15 @@ def parse_lap_data_packet(data, player_idx):
 
         # Save current lap trace as track outline reference, then reset for next lap
         saved_trace = None
+        saved_tyre_wear = saved_tyre_damage = None
         if save_session_id is not None:
             with state_lock:
                 if state["lap_trace"]:
                     saved_trace = list(state["lap_trace"])
                     state["track_outline"] = saved_trace
                 state["lap_trace"] = []
+                saved_tyre_wear   = list(state.get("tyre_wear")   or [None] * 4)
+                saved_tyre_damage = list(state.get("tyre_damage") or [None] * 4)
 
         # Compute aggregate telemetry stats from the trace and store in lap record
         if saved_trace:
@@ -683,7 +694,8 @@ def parse_lap_data_packet(data, player_idx):
                     lap_record["telem"][key] = round(tw[idx])
 
         if save_session_id is not None:
-            db_save_lap(save_session_id, lap_record, trace=saved_trace)
+            db_save_lap(save_session_id, lap_record, trace=saved_trace,
+                        tyre_wear=saved_tyre_wear, tyre_damage=saved_tyre_damage)
         if save_pb_data is not None:
             db_upsert_track_pb(*save_pb_data)
             with state_lock:
@@ -1298,12 +1310,18 @@ class Handler(BaseHTTPRequestHandler):
                 lap_num    = int(parts[-1])
                 con = sqlite3.connect(DB_PATH)
                 row = con.execute(
-                    "SELECT trace FROM laps WHERE session_id=? AND lap_num=?",
+                    "SELECT trace, tyre_wear, tyre_damage FROM laps WHERE session_id=? AND lap_num=?",
                     (session_id, lap_num)
                 ).fetchone()
                 con.close()
-                trace_data = json.loads(row[0]) if row and row[0] else []
-                payload = json.dumps({"trace": trace_data}).encode()
+                trace_data      = json.loads(row[0]) if row and row[0] else []
+                tyre_wear_data  = json.loads(row[1]) if row and len(row) > 1 and row[1] else None
+                tyre_damage_data= json.loads(row[2]) if row and len(row) > 2 and row[2] else None
+                payload = json.dumps({
+                    "trace":       trace_data,
+                    "tyre_wear":   tyre_wear_data,
+                    "tyre_damage": tyre_damage_data,
+                }).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", len(payload))

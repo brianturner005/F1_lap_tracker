@@ -622,8 +622,11 @@ backdrop-filter: blur(4px);
             <canvas id="steer-canvas-sr" width="600" height="55" style="width:100%;display:block;"></canvas>
           </div>
           <div class="telem-gforce-wrap">
+            <div class="telem-label">SPEED</div>
+            <div id="sr-speed-slot" style="margin-bottom:14px;"></div>
             <div class="telem-label">G-FORCE</div>
             <canvas id="gforce-canvas-sr" width="220" height="220" style="display:block;width:100%;"></canvas>
+            <div id="tyre-wear-slot-sr" style="margin-top:10px;"></div>
           </div>
         </div>
       </div>
@@ -1241,9 +1244,17 @@ async function selectSessionLap(lapNum) {
     const r = await fetch(`/api/lap-trace/${sid}/${lapNum}`);
     const d = await r.json();
     const trace = d.trace || [];
+    _srSessionTrace = trace;
+    _srHoverIdx = -1;
     if (waiting) waiting.style.display = 'none';
     if (charts) charts.style.display = '';
     renderTelemetry(trace, null, '-sr');
+    // Show this lap's trace on the sidebar map (locks out live updates)
+    renderTrackMap({ lap_trace: trace, track_outline: _lastGoodOutline, car_pos: null });
+    // Populate right-column slots
+    const srTyreSlot = document.getElementById('tyre-wear-slot-sr');
+    if (srTyreSlot) srTyreSlot.innerHTML = renderTyreDiagram({ tyre_wear: d.tyre_wear, tyre_damage: d.tyre_damage });
+    renderSpeedGauge(trace[0] ? trace[0].speed : 0, 'sr-speed-slot');
   } catch(e) {
     if (waiting) waiting.textContent = 'Failed to load trace.';
   }
@@ -1251,6 +1262,8 @@ async function selectSessionLap(lapNum) {
 
 function closeSessionReview() {
   _selectedSessionLap = null;
+  _srSessionTrace = [];
+  _srHoverIdx = -1;
   const sec = document.getElementById('session-review-section');
   if (sec) sec.style.display = 'none';
   if (lastData) render(lastData);
@@ -2065,8 +2078,8 @@ function renderRevLights(pct, gear) {
   }
 }
 
-function renderSpeedGauge(speed) {
-  const slot = document.getElementById('live-speed-slot');
+function renderSpeedGauge(speed, slotId = 'live-speed-slot') {
+  const slot = document.getElementById(slotId);
   if (!slot) return;
 
   let canvas = slot.querySelector('canvas');
@@ -2138,6 +2151,117 @@ function renderSpeedGauge(speed) {
   ctx.fillStyle = 'rgba(255,255,255,.42)';
   ctx.font = `500 10px 'Inter', sans-serif`;
   ctx.fillText('km/h', cx, cy + 32);
+}
+
+// ── Session-review scrubber ────────────────────────────────────────────────────
+let _srSessionTrace = [];
+let _srHoverIdx     = -1;
+let _srHoverRaf     = null;
+
+function _srSetHover(idx) {
+  _srHoverIdx = idx;
+  if (_srHoverRaf) cancelAnimationFrame(_srHoverRaf);
+  _srHoverRaf = requestAnimationFrame(_srApplyHover);
+}
+
+function _srApplyHover() {
+  _srHoverRaf = null;
+  const idx   = _srHoverIdx;
+  const trace = _srSessionTrace;
+  if (!trace.length) return;
+
+  renderTelemetry(trace, null, '-sr');
+
+  if (idx >= 0 && idx < trace.length) {
+    _srDrawCrosshair(idx, trace.length);
+    renderTrackMap({ lap_trace: trace, track_outline: _lastGoodOutline, car_pos: null });
+    _srHighlightMapPoint(idx, trace);
+    renderSpeedGauge(trace[idx].speed, 'sr-speed-slot');
+  } else {
+    renderTrackMap({ lap_trace: trace, track_outline: _lastGoodOutline, car_pos: null });
+    renderSpeedGauge(trace[0] ? trace[0].speed : 0, 'sr-speed-slot');
+  }
+}
+
+function _srDrawCrosshair(idx, nPts) {
+  const frac     = idx / Math.max(nPts - 1, 1);
+  const stdPad   = _chartPad();
+  const inputPad = { t: 2, b: 2, l: 28, r: 4 };
+  const charts   = [
+    { id: 'speed-canvas-sr',  p: stdPad   },
+    { id: 'inputs-canvas-sr', p: inputPad },
+    { id: 'gear-canvas-sr',   p: stdPad   },
+    { id: 'steer-canvas-sr',  p: stdPad   },
+  ];
+  for (const { id, p } of charts) {
+    const canvas = document.getElementById(id);
+    if (!canvas) continue;
+    const ctx = canvas.getContext('2d');
+    const x   = p.l + frac * (canvas.width - p.l - p.r);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.8)';
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, p.t);
+    ctx.lineTo(x, canvas.height - p.b);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function _srHighlightMapPoint(idx, trace) {
+  const canvas = document.getElementById('track-canvas');
+  if (!canvas) return;
+  const ref = (_lastGoodOutline && _lastGoodOutline.length >= trace.length)
+    ? _lastGoodOutline : trace;
+  const b  = _bounds(ref);
+  const cw = canvas.width, ch = canvas.height, pad = 14;
+  const pos = _toCanvas(trace[idx], b, cw, ch, pad);
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.shadowBlur  = 14;
+  ctx.shadowColor = '#00d2ff';
+  ctx.fillStyle   = '#00d2ff';
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 5, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+}
+
+function _srChartMouseMove(e, id, isInputPad) {
+  if (!_srSessionTrace.length) return;
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const rect   = canvas.getBoundingClientRect();
+  const pixelX = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const p      = isInputPad ? { l: 28, r: 4 } : _chartPad();
+  const cw     = canvas.width - p.l - p.r;
+  const n      = _srSessionTrace.length;
+  const idx    = Math.max(0, Math.min(n - 1, Math.round(((pixelX - p.l) / cw) * (n - 1))));
+  _srSetHover(idx);
+}
+
+function _srMapMouseMove(e) {
+  if (!_srSessionTrace.length) return;
+  const canvas = document.getElementById('track-canvas');
+  if (!canvas) return;
+  const rect   = canvas.getBoundingClientRect();
+  const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const mouseY = (e.clientY - rect.top)  * (canvas.height / rect.height);
+  const trace  = _srSessionTrace;
+  const ref    = (_lastGoodOutline && _lastGoodOutline.length >= trace.length)
+    ? _lastGoodOutline : trace;
+  const b  = _bounds(ref);
+  const cw = canvas.width, ch = canvas.height, pad = 14;
+  let bestIdx = 0, bestDist = Infinity;
+  for (let i = 0; i < trace.length; i++) {
+    const c  = _toCanvas(trace[i], b, cw, ch, pad);
+    const dx = c.x - mouseX, dy = c.y - mouseY;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestDist) { bestDist = d2; bestIdx = i; }
+  }
+  _srSetHover(bestIdx);
 }
 
 // ── Track Map ──────────────────────────────────────────────────────────────────
@@ -2319,12 +2443,33 @@ async function fetchMotion() {
     }
     renderRevLights(d.rev_lights_pct || 0, d.car_gear ?? 0);
     renderSpeedGauge(d.car_speed || 0);
-    if (_reviewLap === null) {
+    if (_reviewLap === null && !_srSessionTrace.length) {
       renderTrackMap(d);
       if (!_comparisonActive()) renderTelemetry(d.lap_trace || []);
     }
   } catch(e) {}
 }
+
+// ── Session-review scrubber event listeners ────────────────────────────────────
+[
+  ['speed-canvas-sr',  false],
+  ['inputs-canvas-sr', true],
+  ['gear-canvas-sr',   false],
+  ['steer-canvas-sr',  false],
+].forEach(([id, isInputPad]) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.cursor = 'crosshair';
+  el.addEventListener('mousemove', e => _srChartMouseMove(e, id, isInputPad));
+  el.addEventListener('mouseleave', () => { if (_srSessionTrace.length) _srSetHover(-1); });
+});
+
+(function() {
+  const mapEl = document.getElementById('track-canvas');
+  if (!mapEl) return;
+  mapEl.addEventListener('mousemove', _srMapMouseMove);
+  mapEl.addEventListener('mouseleave', () => { if (_srSessionTrace.length) _srSetHover(-1); });
+})();
 
 fetchState();
 fetchPBs();
