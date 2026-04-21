@@ -2443,8 +2443,10 @@ async function fetchMotion() {
     }
     renderRevLights(d.rev_lights_pct || 0, d.car_gear ?? 0);
     renderSpeedGauge(d.car_speed || 0);
-    if (_reviewLap === null && !_srSessionTrace.length) {
-      renderTrackMap(d);
+    if (_reviewLap === null) {
+      // Only update the map with live data when not locked to a session-review lap
+      if (!_srSessionTrace.length) renderTrackMap(d);
+      // Always update the race-tab charts so "waiting" clears when data arrives
       if (!_comparisonActive()) renderTelemetry(d.lap_trace || []);
     }
   } catch(e) {}
