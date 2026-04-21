@@ -547,6 +547,10 @@ backdrop-filter: blur(4px);
     </div>
   </aside>
   <div class="main-col">
+    <div id="update-banner" style="display:none;align-items:center;gap:10px;margin-bottom:8px;padding:8px 12px;background:rgba(39,174,96,.12);border:1px solid var(--green);border-radius:4px;font-size:.73rem;color:var(--green);">
+      <span style="font-size:1rem;">⬆</span>
+      <span>Pitwall IQ <strong id="update-version"></strong> is ready — restart the app to apply the update.</span>
+    </div>
     <div class="tab-bar">
       <button class="tab active" id="tab-btn-race" onclick="switchTab('race')">RACE</button>
       <button class="tab" id="tab-btn-session" onclick="switchTab('session')">SESSION</button>
@@ -1492,6 +1496,16 @@ function renderTyreDiagram(d) {
 }
 
 function render(d) {
+  const updateBanner = document.getElementById('update-banner');
+  if (updateBanner) {
+    if (d.update_available) {
+      document.getElementById('update-version').textContent = 'v' + d.update_available;
+      updateBanner.style.display = 'flex';
+    } else {
+      updateBanner.style.display = 'none';
+    }
+  }
+
   const dot = document.getElementById('dot');
   const stxt = document.getElementById('status-text');
   if (d.udp_connected) {

@@ -39,6 +39,8 @@ import os
 
 log = logging.getLogger(__name__)
 
+VERSION = "0.9.0"
+
 # ── Leaderboard config ───────────────────────────────────────────────────────
 # Default URL is the shared Pitwall IQ backend — no configuration needed.
 # Override by setting F1_LEADERBOARD_URL if you host your own instance.
@@ -112,6 +114,7 @@ state = {
     "tyre_damage":       [None, None, None, None],  # [RL, RR, FL, FR] uint8 % structural damage
     "front_wing_damage": [None, None],              # [left, right] uint8 % front wing damage
     "tyre_age_laps":     None,                      # laps on current tyre set (from Car Status)
+    "update_available":  None,                      # set to version string when update is downloaded
 }
 
 TRACK_IDS = {
@@ -947,6 +950,49 @@ def _warn_backend_unreachable(service: str) -> None:
         print(f"[{service}] Backend unreachable — {service.lower()} features will be unavailable until the connection is restored.")
         _backend_warned.add(service)
 
+# ── Auto-update ───────────────────────────────────────────────────────────────
+_UPDATE_BASE = "https://raw.githubusercontent.com/brianturner005/F1_lap_tracker/main"
+_UPDATE_FILES = ["F1_lap_tracker.py", "static/dashboard.html"]
+
+def _parse_version(v):
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except Exception:
+        return (0, 0, 0)
+
+def _check_and_apply_update():
+    time.sleep(8)  # wait for startup to settle before hitting network
+    try:
+        from urllib.request import urlopen
+        with urlopen(f"{_UPDATE_BASE}/version.txt", timeout=10) as r:
+            remote_ver = r.read().decode("utf-8").strip()
+        if _parse_version(remote_ver) <= _parse_version(VERSION):
+            return
+        print(f"[Update] New version available: {remote_ver} (you have {VERSION})")
+        print(f"[Update] Downloading update…")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        updated = []
+        for rel in _UPDATE_FILES:
+            try:
+                with urlopen(f"{_UPDATE_BASE}/{rel}", timeout=30) as r:
+                    content = r.read()
+                dest = os.path.join(script_dir, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                tmp = dest + ".tmp"
+                with open(tmp, "wb") as f:
+                    f.write(content)
+                os.replace(tmp, dest)
+                updated.append(rel)
+            except Exception as e:
+                log.warning("Update download failed for %s: %s", rel, e)
+        if updated:
+            print(f"[Update] ✓ v{remote_ver} downloaded ({', '.join(updated)})")
+            print(f"[Update] Restart Pitwall IQ to apply the update.")
+            with state_lock:
+                state["update_available"] = remote_ver
+    except Exception as e:
+        log.debug("Auto-update check failed: %s", e)
+
 def _lb_post(payload, background=True):
     """POST payload dict to leaderboard /api/lb-submit.
 
@@ -1539,9 +1585,12 @@ def main():
     t = threading.Thread(target=udp_listener, daemon=True)
     t.start()
 
+    # Check for updates in background (after startup settles)
+    threading.Thread(target=_check_and_apply_update, daemon=True).start()
+
     # Start HTTP server
     server = HTTPServer(("0.0.0.0", 5000), Handler)
-    print("🌐  Dashboard → http://localhost:5000")
+    print(f"🌐  Dashboard → http://localhost:5000  (v{VERSION})")
     print()
     print("Press Ctrl+C to stop.")
     print()
