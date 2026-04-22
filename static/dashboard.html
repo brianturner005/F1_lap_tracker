@@ -401,6 +401,16 @@ tr.comp-b-row td { background:rgba(247,164,76,.07); }
 .telem-charts { flex: 1; min-width: 0; }
 .telem-gforce-wrap { width: 220px; flex-shrink: 0; }
 .telem-label { font-size: .72rem; letter-spacing: .1em; color: #bbb; margin-bottom: 4px; }
+.sector-chip {
+  font-family: 'Orbitron', sans-serif;
+  font-size: .6rem; font-weight: 700; letter-spacing: .04em;
+  padding: 3px 9px; border-radius: 4px;
+  border: 1px solid var(--border); color: var(--muted);
+  background: var(--glass); white-space: nowrap;
+  transition: color .25s, border-color .25s, background .25s;
+}
+.sector-chip.s-green { border-color: rgba(0,214,143,.4); color: #00d68f; background: rgba(0,214,143,.1); }
+.sector-chip.s-red   { border-color: rgba(225,6,0,.4);   color: #ff6b6b; background: rgba(225,6,0,.1); }
 
 /* Community leaderboard panel */
 .lb-wrap { padding-bottom: 8px; }
@@ -569,6 +579,12 @@ backdrop-filter: blur(4px);
             <canvas id="rev-lights-canvas" width="600" height="20" style="width:100%;display:block;border-radius:4px;"></canvas>
           </div>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+          <span class="telem-label" style="margin-bottom:0;margin-right:4px;white-space:nowrap;">SECTORS</span>
+          <div id="sector-chip-1" class="sector-chip">S1 —</div>
+          <div id="sector-chip-2" class="sector-chip">S2 —</div>
+          <div id="sector-chip-3" class="sector-chip">S3 —</div>
+        </div>
       </div>
       <div id="telemetry-section" style="display:none;">
         <div class="panel">
@@ -590,6 +606,7 @@ backdrop-filter: blur(4px);
               <div class="telem-label">G-FORCE</div>
               <canvas id="gforce-canvas" width="220" height="180" style="display:block;width:100%;"></canvas>
               <div id="tyre-wear-slot"></div>
+              <div id="fuel-slot"></div>
             </div>
           </div>
         </div>
@@ -2092,6 +2109,70 @@ function renderRevLights(pct, gear) {
   }
 }
 
+// ── Sector split chips ────────────────────────────────────────────────────────
+function renderSectorStrip(d) {
+  const chips = [
+    document.getElementById('sector-chip-1'),
+    document.getElementById('sector-chip-2'),
+    document.getElementById('sector-chip-3'),
+  ];
+  if (!chips[0]) return;
+
+  const validLaps = lastData ? (lastData.laps || []).filter(l => !l.invalid) : [];
+  const bestS = [
+    Math.min(...validLaps.filter(l => l.s1_ms > 0).map(l => l.s1_ms), Infinity),
+    Math.min(...validLaps.filter(l => l.s2_ms > 0).map(l => l.s2_ms), Infinity),
+    Math.min(...validLaps.filter(l => l.s3_ms > 0).map(l => l.s3_ms), Infinity),
+  ];
+
+  const curSector = d.current_sector ?? 0;
+  const times     = d.last_sector || [null, null, null];
+
+  ['S1', 'S2', 'S3'].forEach((label, i) => {
+    const chip = chips[i];
+    const ms   = times[i];
+    chip.className = 'sector-chip';
+    if (i >= curSector || ms == null) {
+      chip.textContent = label + ' —';
+      return;
+    }
+    const s      = Math.floor(ms / 1000);
+    const rem    = String(ms % 1000).padStart(3, '0');
+    const best   = bestS[i];
+    const delta  = isFinite(best) ? ms - best : null;
+    const deltaStr = delta !== null
+      ? (delta >= 0 ? ' +' : ' ') + (delta / 1000).toFixed(3)
+      : '';
+    chip.textContent = `${label} ${s}.${rem}${deltaStr}`;
+    if (delta !== null) chip.classList.add(delta < 0 ? 's-green' : 's-red');
+  });
+}
+
+// ── Fuel bar ─────────────────────────────────────────────────────────────────
+function renderFuelBar(d) {
+  const slot = document.getElementById('fuel-slot');
+  if (!slot) return;
+  const fuel  = d.fuel_in_tank;
+  const cap   = d.fuel_capacity;
+  const lapsL = d.fuel_remaining_laps;
+  if (fuel == null || cap == null || cap <= 0) { slot.innerHTML = ''; return; }
+
+  const pct     = Math.max(0, Math.min(100, (fuel / cap) * 100));
+  const color   = pct > 50 ? '#00d68f' : pct > 25 ? '#f7c948' : '#e10600';
+  const lapsStr = lapsL != null ? `~${lapsL.toFixed(1)} laps` : '';
+
+  slot.innerHTML = `
+    <div class="telem-label" style="margin-top:10px;">FUEL</div>
+    <div style="height:7px;background:var(--border);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:4px;
+                  transition:width .5s;box-shadow:0 0 6px ${color}88;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:3px;">
+      <span style="font-size:.62rem;color:var(--muted);">${fuel.toFixed(1)} kg</span>
+      <span style="font-size:.62rem;color:var(--muted);">${lapsStr}</span>
+    </div>`;
+}
+
 function renderSpeedGauge(speed, slotId = 'live-speed-slot') {
   const slot = document.getElementById(slotId);
   if (!slot) return;
@@ -2457,6 +2538,8 @@ async function fetchMotion() {
     }
     renderRevLights(d.rev_lights_pct || 0, d.car_gear ?? 0);
     renderSpeedGauge(d.car_speed || 0);
+    renderSectorStrip(d);
+    renderFuelBar(d);
     if (_reviewLap === null) {
       // Only update the map with live data when not locked to a session-review lap
       if (!_srSessionTrace.length) renderTrackMap(d);
