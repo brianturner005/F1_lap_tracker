@@ -912,9 +912,10 @@ def parse_final_classification_packet(data, player_idx):
         print(f"[Final Classification] status={result_status} pos={position} "
               f"sess='{sess_type}' track='{track}' sid={sid}")
 
-        # Only record career results for race sessions
-        if sess_type not in RACE_SESSION_TYPES:
-            print(f"[Final Classification] skipped — session type '{sess_type}' not a race")
+        # Final Classification is only sent at race end — no session-type gate needed.
+        # Validate using packet data: must have a real position and have completed laps.
+        if position == 0 or num_laps == 0:
+            print(f"[Final Classification] skipped — pos={position} laps={num_laps} (not a real race finish)")
             return
 
         with state_lock:

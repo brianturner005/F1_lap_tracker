@@ -584,6 +584,8 @@ backdrop-filter: blur(4px);
           <div id="sector-chip-1" class="sector-chip">S1 —</div>
           <div id="sector-chip-2" class="sector-chip">S2 —</div>
           <div id="sector-chip-3" class="sector-chip">S3 —</div>
+          <div style="flex:1;"></div>
+          <div id="weather-chip" class="sector-chip">—</div>
         </div>
       </div>
       <div id="telemetry-section" style="display:none;">
@@ -2146,6 +2148,16 @@ function renderSectorStrip(d) {
     chip.textContent = `${label} ${s}.${rem}${deltaStr}`;
     if (delta !== null) chip.classList.add(delta < 0 ? 's-green' : 's-red');
   });
+
+  const weatherChip = document.getElementById('weather-chip');
+  if (weatherChip) {
+    const wx = lastData?.session?.weather || '';
+    const WEATHER_ICON = {
+      'Clear': '☀ Clear', 'Light Cloud': '⛅ Lt Cloud', 'Overcast': '☁ Overcast',
+      'Light Rain': '🌦 Lt Rain', 'Heavy Rain': '🌧 Hvy Rain', 'Storm': '⛈ Storm',
+    };
+    weatherChip.textContent = WEATHER_ICON[wx] || (wx || '—');
+  }
 }
 
 // ── Fuel bar ─────────────────────────────────────────────────────────────────
