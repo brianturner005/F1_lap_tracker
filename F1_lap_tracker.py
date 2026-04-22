@@ -114,6 +114,9 @@ state = {
     "tyre_damage":       [None, None, None, None],  # [RL, RR, FL, FR] uint8 % structural damage
     "front_wing_damage": [None, None],              # [left, right] uint8 % front wing damage
     "tyre_age_laps":     None,                      # laps on current tyre set (from Car Status)
+    "fuel_in_tank":      None,                      # current fuel load kg (from Car Status)
+    "fuel_capacity":     None,                      # tank capacity kg (from Car Status)
+    "fuel_remaining_laps": None,                    # estimated laps of fuel remaining (from Car Status)
     "update_available":  None,                      # set to version string when update is downloaded
 }
 
@@ -795,13 +798,18 @@ def parse_car_status_packet(data, player_idx):
         base = HEADER_SIZE + (player_idx * CAR_STATUS_SIZE)
         if len(data) < base + CAR_STATUS_SIZE:
             return
+        # +5 fuelInTank  +9 fuelCapacity  +13 fuelRemainingLaps
+        fuel_in_tank, fuel_capacity, fuel_remaining = struct.unpack_from("<fff", data, base + 5)
         # +26 visualTyreCompound  +27 tyresAgeLaps
         visual_compound = struct.unpack_from("<B", data, base + 26)[0]
         tyre_age        = struct.unpack_from("<B", data, base + 27)[0]
         compound_name = VISUAL_COMPOUNDS.get(visual_compound)
         with state_lock:
-            state["current_compound"] = compound_name
-            state["tyre_age_laps"]    = int(tyre_age)
+            state["current_compound"]    = compound_name
+            state["tyre_age_laps"]       = int(tyre_age)
+            state["fuel_in_tank"]        = round(float(fuel_in_tank), 2)
+            state["fuel_capacity"]       = round(float(fuel_capacity), 2)
+            state["fuel_remaining_laps"] = round(float(fuel_remaining), 2)
     except Exception as e:
         log.debug("parse_car_status: %s", e)
 
@@ -1340,12 +1348,17 @@ class Handler(BaseHTTPRequestHandler):
                     step = len(pts) // n
                     return pts[::step]
                 payload = json.dumps({
-                    "car_pos":        state["car_pos"],
-                    "car_speed":      state["car_speed"],
-                    "car_gear":       state["car_gear"],
-                    "rev_lights_pct": state["rev_lights_pct"],
-                    "lap_trace":      _thin(trace),
-                    "track_outline":  _thin(outline),
+                    "car_pos":             state["car_pos"],
+                    "car_speed":           state["car_speed"],
+                    "car_gear":            state["car_gear"],
+                    "rev_lights_pct":      state["rev_lights_pct"],
+                    "lap_trace":           _thin(trace),
+                    "track_outline":       _thin(outline),
+                    "last_sector":         state["last_sector"],
+                    "current_sector":      state["current_sector"],
+                    "fuel_in_tank":        state["fuel_in_tank"],
+                    "fuel_capacity":       state["fuel_capacity"],
+                    "fuel_remaining_laps": state["fuel_remaining_laps"],
                 }).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
