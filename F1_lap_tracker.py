@@ -1186,6 +1186,15 @@ def udp_listener():
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass  # silence request logs
 
+    def handle_error(self, request, client_address):
+        pass  # suppress noisy broken-pipe / connection-aborted tracebacks
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # browser closed tab mid-response — not an error
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/logo":
