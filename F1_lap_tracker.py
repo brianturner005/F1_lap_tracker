@@ -39,7 +39,7 @@ import os
 
 log = logging.getLogger(__name__)
 
-VERSION = "0.10.1"
+VERSION = "0.10.2"
 
 # ── Leaderboard config ───────────────────────────────────────────────────────
 # Default URL is the shared Pitwall IQ backend — no configuration needed.
@@ -974,12 +974,14 @@ def _check_and_apply_update():
     time.sleep(8)  # wait for startup to settle before hitting network
     try:
         from urllib.request import urlopen
+        print(f"[Update] Checking for updates…")
         with urlopen(f"{_UPDATE_BASE}/version.txt", timeout=10) as r:
             remote_ver = r.read().decode("utf-8").strip()
+        print(f"[Update] Remote version: {remote_ver}  Local version: {VERSION}")
         if _parse_version(remote_ver) <= _parse_version(VERSION):
+            print(f"[Update] Already up to date.")
             return
-        print(f"[Update] New version available: {remote_ver} (you have {VERSION})")
-        print(f"[Update] Downloading update…")
+        print(f"[Update] New version available: {remote_ver} — downloading…")
         script_dir = os.path.dirname(os.path.abspath(__file__))
         updated = []
         for rel in _UPDATE_FILES:
@@ -993,15 +995,15 @@ def _check_and_apply_update():
                     f.write(content)
                 os.replace(tmp, dest)
                 updated.append(rel)
+                print(f"[Update] ✓ {rel}")
             except Exception as e:
-                log.warning("Update download failed for %s: %s", rel, e)
+                print(f"[Update] ✗ {rel} failed: {e}")
         if updated:
-            print(f"[Update] ✓ v{remote_ver} downloaded ({', '.join(updated)})")
-            print(f"[Update] Restart Pitwall IQ to apply the update.")
+            print(f"[Update] v{remote_ver} ready — restart Pitwall IQ to apply.")
             with state_lock:
                 state["update_available"] = remote_ver
     except Exception as e:
-        log.debug("Auto-update check failed: %s", e)
+        print(f"[Update] Check failed: {e}")
 
 def _lb_post(payload, background=True):
     """POST payload dict to leaderboard /api/lb-submit.

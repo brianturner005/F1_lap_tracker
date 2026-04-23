@@ -595,6 +595,7 @@ backdrop-filter: blur(4px);
         <img id="track-svg-img" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0.18;display:none;transform:scaleY(-1);">
         <canvas id="track-canvas" width="228" height="228" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
       </div>
+      <div id="fuel-slot"></div>
       <div id="lap-nav" style="display:none;align-items:center;justify-content:space-between;margin-top:8px;">
         <button class="map-mode-btn" onclick="lapNavStep(-1)">&#8592;</button>
         <span id="lap-nav-label" style="font-size:.65rem;color:var(--muted);letter-spacing:.1em;"></span>
@@ -655,7 +656,6 @@ backdrop-filter: blur(4px);
               <div class="telem-label">G-FORCE</div>
               <canvas id="gforce-canvas" width="220" height="180" style="display:block;width:100%;"></canvas>
               <div id="tyre-wear-slot"></div>
-              <div id="fuel-slot"></div>
             </div>
           </div>
         </div>
@@ -1043,6 +1043,11 @@ async function renderCommunity() {
       return;
     }
     sessType = _SESS_PRIORITY.find(s => trackPbs.some(p => p.session_type === s)) || trackPbs[0].session_type;
+    // Sync dropdown so the selection always matches what's actually being fetched.
+    // Community requires a specific session type; "all" is not a valid API query.
+    _lbSessionType = sessType;
+    const _sel = document.getElementById('lb-sesstype-select');
+    if (_sel) _sel.value = sessType;
   }
   el.innerHTML = `<div class="panel lb-wrap">
     <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(sessType)}</div>
@@ -2254,14 +2259,14 @@ function renderFuelBar(d) {
   const lapsStr = lapsL != null ? `~${lapsL.toFixed(1)} laps` : '';
 
   slot.innerHTML = `
-    <div class="telem-label" style="margin-top:10px;">FUEL</div>
-    <div style="height:7px;background:var(--border);border-radius:4px;overflow:hidden;">
-      <div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:4px;
-                  transition:width .5s;box-shadow:0 0 6px ${color}88;"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;margin-top:3px;">
-      <span style="font-size:.62rem;color:var(--muted);">${fuel.toFixed(1)} kg</span>
-      <span style="font-size:.62rem;color:var(--muted);">${lapsStr}</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+      <span class="telem-label" style="margin-bottom:0;margin-right:4px;white-space:nowrap;">FUEL</span>
+      <div style="flex:1;height:7px;background:var(--border);border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:4px;
+                    transition:width .5s;box-shadow:0 0 6px ${color}88;"></div>
+      </div>
+      <span style="font-size:.62rem;color:var(--muted);white-space:nowrap;">${fuel.toFixed(1)} kg</span>
+      ${lapsStr ? `<span style="font-size:.62rem;color:var(--muted);white-space:nowrap;">${lapsStr}</span>` : ''}
     </div>`;
 }
 
