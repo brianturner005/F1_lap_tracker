@@ -745,7 +745,7 @@ function switchTab(name) {
 
 // ── Career stats ──────────────────────────────────────────────────────────────
 const RACE_STATUS = {0:'Invalid',1:'Inactive',2:'Active',3:'Finished',4:'DNF',5:'DSQ',6:'N/C',7:'Retired'};
-let _lastRaceResultTs = null;
+let _lastRaceResultTs = localStorage.getItem('pitwall_last_race_ts') || null;
 
 async function loadCareer() {
   try {
@@ -1651,14 +1651,16 @@ function render(d) {
   _checkToasts(d.laps);
 
   // Toast: race result (fires once when Final Classification packet arrives)
-  if (d.race_result && d.race_result.recorded_at !== _lastRaceResultTs) {
+  if (d.race_result && d.race_result.recorded_at && d.race_result.recorded_at !== _lastRaceResultTs) {
     _lastRaceResultTs = d.race_result.recorded_at;
+    localStorage.setItem('pitwall_last_race_ts', _lastRaceResultTs);
     const rr = d.race_result;
     const status = RACE_STATUS[rr.result_status] || '?';
     const msg = rr.result_status === 3
       ? `Race finished: P${rr.position} · ${rr.points} pts${rr.fastest_lap ? ' · Fastest Lap!' : ''}`
       : `Race ended: ${status}`;
     showToast(msg, rr.position === 1 ? 'pb' : 'info', 6000);
+    loadCareer(); // refresh career stats immediately without requiring a tab switch
   }
 
   // Find best sector times across valid laps (for mini-best highlighting)
