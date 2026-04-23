@@ -376,6 +376,53 @@ td.finish-bronze { color:#cd7f32; font-weight:700; }
 
 /* Toast notifications */
 #toast-container { position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+
+/* Terms modal */
+#terms-modal {
+  position:fixed; inset:0; z-index:10000;
+  background:rgba(0,0,0,.75); backdrop-filter:blur(4px);
+  display:none; align-items:center; justify-content:center; padding:16px;
+}
+#terms-modal .terms-box {
+  background:var(--panel); border:1px solid var(--glass-border);
+  box-shadow:var(--shadow-panel); border-radius:10px;
+  max-width:520px; width:100%; padding:24px 28px;
+}
+#terms-modal h2 {
+  font-family:'Orbitron',sans-serif; font-size:.95rem; font-weight:700;
+  letter-spacing:.1em; color:var(--text); margin-bottom:16px;
+}
+#terms-modal .terms-section { margin-bottom:14px; }
+#terms-modal .terms-section h3 {
+  font-size:.65rem; letter-spacing:.12em; color:var(--red);
+  text-transform:uppercase; margin-bottom:5px;
+}
+#terms-modal .terms-section p {
+  font-size:.72rem; color:var(--muted); line-height:1.6;
+}
+#terms-modal .terms-footer {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-top:20px; padding-top:16px; border-top:1px solid var(--border);
+  gap:10px;
+}
+#terms-modal .terms-link {
+  font-size:.65rem; color:var(--muted); text-decoration:none;
+}
+#terms-modal .terms-link:hover { color:var(--text); }
+#terms-modal .terms-btns { display:flex; gap:10px; }
+#terms-modal .btn-decline {
+  background:transparent; border:1px solid var(--border);
+  color:var(--muted); font-family:'Share Tech Mono',monospace;
+  font-size:.72rem; padding:6px 16px; border-radius:4px; cursor:pointer;
+  letter-spacing:.05em;
+}
+#terms-modal .btn-decline:hover { border-color:var(--text); color:var(--text); }
+#terms-modal .btn-accept {
+  background:var(--red); border:none; color:#fff;
+  font-family:'Orbitron',sans-serif; font-weight:700;
+  font-size:.7rem; padding:6px 18px; border-radius:4px; cursor:pointer;
+  letter-spacing:.08em;
+}
 .toast { background:rgba(17,17,20,.88); border:1px solid var(--glass-border); border-radius:10px; padding:12px 20px; font-size:.78rem; letter-spacing:.04em; opacity:1; transition:opacity .35s; min-width:220px; backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); box-shadow:0 8px 32px rgba(0,0,0,.5); }
 .toast.pb     { border-color:var(--purple); color:var(--purple); }
 .toast.sector { border-color:var(--yellow); color:var(--yellow); }
@@ -774,7 +821,35 @@ function _updateToggle() {
   btn.className   = 'btn btn-toggle' + (_lbOptIn ? ' active' : '');
 }
 
+// ── Terms of use ──────────────────────────────────────────────────────────────
+const _TERMS_KEY = 'pitwall_terms_v1';
+let _termsCallback = null;
+
+function _termsAccepted() { return localStorage.getItem(_TERMS_KEY) === 'accepted'; }
+
+function showTermsModal(onAccept) {
+  _termsCallback = onAccept || null;
+  document.getElementById('terms-modal').style.display = 'flex';
+}
+
+function acceptTerms() {
+  localStorage.setItem(_TERMS_KEY, 'accepted');
+  document.getElementById('terms-modal').style.display = 'none';
+  if (_termsCallback) { const cb = _termsCallback; _termsCallback = null; cb(); }
+}
+
+function declineTerms() {
+  localStorage.setItem(_TERMS_KEY, 'declined');
+  document.getElementById('terms-modal').style.display = 'none';
+  _termsCallback = null;
+}
+
 async function toggleLBOptIn() {
+  // If turning ON for the first time, require terms acceptance first
+  if (!_lbOptIn && !_termsAccepted()) {
+    showTermsModal(() => toggleLBOptIn());
+    return;
+  }
   _lbOptIn = !_lbOptIn;
   _updateToggle();
   const name = document.getElementById('lb-name').value.trim() || 'Anonymous';
@@ -786,6 +861,9 @@ async function toggleLBOptIn() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Show terms on first launch (never accepted or declined before)
+  if (!localStorage.getItem(_TERMS_KEY)) showTermsModal();
+
   const nameInput = document.getElementById('lb-name');
   if (nameInput) {
     nameInput.addEventListener('change', async () => {
@@ -2600,6 +2678,37 @@ setInterval(() => {
 }, 60000);
 setInterval(fetchMotion, 250);
 </script>
+
+<div id="terms-modal">
+  <div class="terms-box">
+    <h2>Terms of Use &amp; Privacy</h2>
+
+    <div class="terms-section">
+      <h3>Independent Fan Project</h3>
+      <p>Pitwall IQ is not affiliated with, endorsed by, or associated with Formula 1, FOM, the FIA, Electronic Arts, or Codemasters. All F1 trademarks belong to their respective owners.</p>
+    </div>
+
+    <div class="terms-section">
+      <h3>Your Data</h3>
+      <p><strong style="color:var(--text);">All lap data is stored locally on your device.</strong> Nothing is sent externally unless you opt in below.</p>
+      <p style="margin-top:6px;"><strong style="color:var(--text);">Community Leaderboard (opt-in):</strong> If you enable Submit PBs, your display name, track, lap time, and tyre compound are submitted to the shared Pitwall IQ backend. Submitted times are publicly visible on the leaderboard.</p>
+      <p style="margin-top:6px;"><strong style="color:var(--text);">AI Debrief (on request):</strong> Lap and sector data is sent to generate your debrief and is not retained after the response.</p>
+    </div>
+
+    <div class="terms-section">
+      <h3>No Warranty</h3>
+      <p>This software is provided "as is" without warranty of any kind. Use at your own risk.</p>
+    </div>
+
+    <div class="terms-footer">
+      <a class="terms-link" href="https://github.com/brianturner005/F1_lap_tracker/blob/main/TERMS.md" target="_blank">Full Terms &amp; Privacy Policy ↗</a>
+      <div class="terms-btns">
+        <button class="btn-decline" onclick="declineTerms()">DECLINE</button>
+        <button class="btn-accept" onclick="acceptTerms()">ACCEPT</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="toast-container"></div>
 </body>
