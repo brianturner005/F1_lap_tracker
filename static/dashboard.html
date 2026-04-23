@@ -1043,6 +1043,11 @@ async function renderCommunity() {
       return;
     }
     sessType = _SESS_PRIORITY.find(s => trackPbs.some(p => p.session_type === s)) || trackPbs[0].session_type;
+    // Sync dropdown so the selection always matches what's actually being fetched.
+    // Community requires a specific session type; "all" is not a valid API query.
+    _lbSessionType = sessType;
+    const _sel = document.getElementById('lb-sesstype-select');
+    if (_sel) _sel.value = sessType;
   }
   el.innerHTML = `<div class="panel lb-wrap">
     <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(sessType)}</div>
