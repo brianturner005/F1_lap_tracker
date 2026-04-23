@@ -1,0 +1,165 @@
+name: Weekly Security Scan
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # Every Monday at 09:00 UTC
+  workflow_dispatch:        # Allow manual trigger from the Actions tab
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  scan:
+    name: Run Security Scanners
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install scanners
+        run: pip install bandit pip-audit
+
+      # ── Source-code analysis ────────────────────────────────────────────────
+      - name: Run bandit (source analysis)
+        run: |
+          bandit -r F1_lap_tracker.py \
+            --format json \
+            --output bandit-report.json \
+            --severity-level medium \
+            || true
+          bandit -r F1_lap_tracker.py \
+            --format txt \
+            --output bandit-report.txt \
+            --severity-level medium \
+            || true
+
+      # ── Dependency audit ────────────────────────────────────────────────────
+      - name: Run pip-audit (dependency CVEs)
+        run: |
+          # Scan any declared requirements; gracefully handles no-dep projects
+          if [ -f requirements.txt ]; then
+            pip-audit -r requirements.txt --format json --output pip-audit-report.json || true
+          else
+            echo '{"dependencies":[]}' > pip-audit-report.json
+          fi
+
+      # ── Build summary + conditionally file an issue ─────────────────────────
+      - name: Report findings
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const scanDate = new Date().toISOString().split('T')[0];
+
+            // ── Bandit ─────────────────────────────────────────────────────
+            let banditSection = '';
+            let banditHighCount = 0, banditMedCount = 0;
+
+            try {
+              const bd = JSON.parse(fs.readFileSync('bandit-report.json', 'utf8'));
+              const results = bd.results || [];
+              banditHighCount = results.filter(r => r.issue_severity === 'HIGH').length;
+              banditMedCount  = results.filter(r => r.issue_severity === 'MEDIUM').length;
+
+              if (results.length === 0) {
+                banditSection = '**No issues found.**';
+              } else {
+                const rows = results.map(r =>
+                  `| ${r.issue_severity} | ${r.issue_confidence} | ${r.test_id} | ${r.issue_text} | \`${r.filename}:${r.line_number}\` |`
+                ).join('\n');
+                banditSection =
+                  `Found **${results.length}** issue(s) at MEDIUM+ severity.\n\n` +
+                  `| Severity | Confidence | Test | Description | Location |\n` +
+                  `|----------|-----------|------|-------------|----------|\n` +
+                  rows;
+              }
+            } catch (e) {
+              banditSection = `_Could not parse bandit output: ${e.message}_`;
+            }
+
+            // ── pip-audit ──────────────────────────────────────────────────
+            let auditSection = '';
+            let auditVulnCount = 0;
+
+            try {
+              const pa = JSON.parse(fs.readFileSync('pip-audit-report.json', 'utf8'));
+              const vulns = (pa.dependencies || []).flatMap(d =>
+                (d.vulns || []).map(v => ({ pkg: d.name, version: d.version, ...v }))
+              );
+              auditVulnCount = vulns.length;
+
+              if (vulns.length === 0) {
+                auditSection = '**No vulnerabilities found.** _(Project has no pip dependencies — nothing to audit.)_';
+              } else {
+                const rows = vulns.map(v => {
+                  const fix = v.fix_versions?.length ? v.fix_versions.join(', ') : 'none available';
+                  return `| ${v.pkg} | ${v.version} | ${v.id} | ${fix} |`;
+                }).join('\n');
+                auditSection =
+                  `Found **${vulns.length}** vulnerability(ies).\n\n` +
+                  `| Package | Version | CVE / ID | Fix versions |\n` +
+                  `|---------|---------|----------|--------------|\n` +
+                  rows +
+                  `\n\n> To apply fixes locally: \`pip-audit -r requirements.txt --fix\``;
+              }
+            } catch (e) {
+              auditSection = `_Could not parse pip-audit output: ${e.message}_`;
+            }
+
+            // ── Actions step summary (always written) ──────────────────────
+            const totalIssues = banditHighCount + banditMedCount + auditVulnCount;
+            const statusIcon = totalIssues === 0 ? '✅' : '⚠️';
+
+            await core.summary
+              .addHeading(`${statusIcon} Security Scan — ${scanDate}`)
+              .addRaw(`**Bandit:** ${banditHighCount} HIGH, ${banditMedCount} MEDIUM | **pip-audit:** ${auditVulnCount} CVE(s)\n\n`)
+              .addRaw(totalIssues === 0
+                ? '_No actionable findings. No issue filed._'
+                : `_See the GitHub Issue filed by this run for full details._`)
+              .write();
+
+            // ── File an issue only when there are findings ─────────────────
+            if (totalIssues === 0) {
+              console.log('All clear — no issue filed.');
+              return;
+            }
+
+            const severity = banditHighCount > 0 || auditVulnCount > 0 ? '🔴 HIGH' : '🟡 MEDIUM';
+
+            const body = [
+              `## Security Scan Report — ${scanDate}`,
+              '',
+              '> **Action required.** Review the findings below, apply fixes, then close this issue.',
+              '> No changes have been made automatically.',
+              '',
+              '---',
+              '',
+              '### 🔍 Source Code Analysis (Bandit)',
+              banditSection,
+              '',
+              '### 📦 Dependency Vulnerabilities (pip-audit)',
+              auditSection,
+              '',
+              '---',
+              '',
+              '#### How to fix',
+              '- **Bandit findings** — review each flagged line in `F1_lap_tracker.py` and refactor as needed.',
+              '- **Dependency CVEs** — run `pip-audit -r requirements.txt --fix` locally, test, then open a PR.',
+              '- Close this issue once all findings are resolved or accepted as false positives.',
+            ].join('\n');
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              title: `[Security Scan] ${severity} findings — ${scanDate}`,
+              body,
+              labels: ['security'],
+            });
+
+            console.log(`Issue filed: ${issue.data.html_url}`);
+            core.setOutput('issue_url', issue.data.html_url);
