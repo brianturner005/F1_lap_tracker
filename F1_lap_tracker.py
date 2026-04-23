@@ -938,6 +938,7 @@ def parse_final_classification_packet(data, player_idx):
                 "fastest_lap": fastest,
                 "track": track,
                 "session_type": sess_type,
+                "recorded_at": datetime.now().isoformat(),
             }
         db_save_race_result(sid, track, sess_type, position, grid_pos, points,
                             num_laps, result_status, best_lap_ms, best_lap_str,
