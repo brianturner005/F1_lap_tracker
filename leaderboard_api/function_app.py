@@ -78,6 +78,30 @@ def _normalize_name(name: str) -> str:
     return " ".join(name.lower().split())
 
 
+_LEET_MAP = str.maketrans({
+    "4": "a", "@": "a", "^": "a",
+    "8": "b",
+    "3": "e", "&": "e",
+    "1": "i", "!": "i", "|": "i",
+    "5": "s", "$": "s",
+    "7": "t", "+": "t",
+    "0": "o",
+    "9": "g",
+    "6": "b",
+    "2": "z",
+})
+
+
+def _deleet(name: str) -> str:
+    """Replace common leetspeak substitutions so profanity check catches evasions."""
+    return name.lower().translate(_LEET_MAP)
+
+
+def _contains_profanity(name: str) -> bool:
+    """Check both the original name and its de-leeted form."""
+    return _profanity.contains_profanity(name) or _profanity.contains_profanity(_deleet(name))
+
+
 def _check_and_register_name(display_name: str, player_id: str):
     """Return an error string if the name is taken, otherwise register it.
 
@@ -137,7 +161,7 @@ def _handle_submit(body) -> func.HttpResponse:
         return _error("display_name must be between 1 and 32 characters.")
     if not all(c.isprintable() for c in display_name):
         return _error("display_name contains invalid characters.")
-    if _profanity.contains_profanity(display_name):
+    if _contains_profanity(display_name):
         return _error("That display name isn't allowed. Please choose a different name.")
     name_conflict = _check_and_register_name(display_name, player_id)
     if name_conflict:
@@ -232,7 +256,7 @@ def leaderboard(req: func.HttpRequest) -> func.HttpResponse:
     container = _get_container(LEADERBOARD_CONTAINER)
 
     top_query = (
-        "SELECT c.player_id, c.display_name, c.lap_time, c.lap_time_ms, c.compound "
+        "SELECT c.player_id, c.display_name, c.lap_time, c.lap_time_ms, c.compound, c.submitted_at "
         "FROM c "
         "WHERE c.track_session = @pk "
         "ORDER BY c.track_session ASC, c.lap_time_ms ASC "
@@ -261,6 +285,7 @@ def leaderboard(req: func.HttpRequest) -> func.HttpResponse:
             "lap_time": item.get("lap_time", ""),
             "lap_time_ms": item.get("lap_time_ms", 0),
             "compound": item.get("compound", ""),
+            "submitted_at": item.get("submitted_at", ""),
             "is_player": is_player,
         })
 

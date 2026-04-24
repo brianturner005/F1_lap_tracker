@@ -1069,6 +1069,13 @@ async function renderCommunity() {
   } catch(e) {}
 }
 
+function _fmtLbDate(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' });
+  } catch { return '—'; }
+}
+
 function renderLeaderboard(d) {
   const el = document.getElementById('lb-section');
   if (!d || !d.entries || d.entries.length === 0) {
@@ -1081,11 +1088,13 @@ function renderLeaderboard(d) {
   let rows = '';
   for (const e of d.entries) {
     const top3 = e.rank <= 3 ? 'top3' : '';
+    const dateStr = e.submitted_at ? _fmtLbDate(e.submitted_at) : '—';
     rows += `<tr class="${e.is_player ? 'lb-player' : ''}">
       <td class="lb-rank ${top3}">${e.rank}</td>
       <td class="lap-time">${e.lap_time}</td>
       <td>${compoundPill(e.compound)}</td>
       <td style="font-size:.78rem">${esc(e.display_name)}</td>
+      <td style="font-size:.72rem;color:var(--muted)">${dateStr}</td>
     </tr>`;
   }
   const rankNote = d.player_rank
@@ -1098,7 +1107,7 @@ function renderLeaderboard(d) {
     </div>
     <div class="lap-table-wrap">
       <table>
-        <thead><tr><th>#</th><th>TIME</th><th>TYRE</th><th>DRIVER</th></tr></thead>
+        <thead><tr><th>#</th><th>TIME</th><th>TYRE</th><th>DRIVER</th><th>DATE</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
