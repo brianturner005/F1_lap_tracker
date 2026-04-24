@@ -1032,22 +1032,24 @@ async function renderCommunity() {
     el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
     return;
   }
-  // When 'All' is selected, prefer Race > Qualifying > Practice over short sessions
   const _SESS_PRIORITY = ['Race','Race 2','Race 3','Qualifying 3','Qualifying 2','Qualifying 1',
                           'Practice 1','Practice 2','Practice 3','OSQ','Time Trial'];
   let sessType = _lbSessionType;
   if (!sessType || sessType === 'all') {
-    const trackPbs = _lbPbs.filter(p => p.track === _lbTrack);
-    if (!trackPbs.length) {
-      el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">No times recorded for this track.</p></div>`;
-      return;
-    }
-    sessType = _SESS_PRIORITY.find(s => trackPbs.some(p => p.session_type === s)) || trackPbs[0].session_type;
-    // Sync dropdown so the selection always matches what's actually being fetched.
-    // Community requires a specific session type; "all" is not a valid API query.
+    // Always default to Race for community — don't use the user's personal bests to decide,
+    // since they may have only driven Practice on a track the community has Race times for.
+    sessType = 'Race';
     _lbSessionType = sessType;
     const _sel = document.getElementById('lb-sesstype-select');
-    if (_sel) _sel.value = sessType;
+    if (_sel) {
+      if (![..._sel.options].some(o => o.value === sessType)) {
+        const opt = document.createElement('option');
+        opt.value = sessType;
+        opt.textContent = sessType;
+        _sel.insertBefore(opt, _sel.options[1]);
+      }
+      _sel.value = sessType;
+    }
   }
   el.innerHTML = `<div class="panel lb-wrap">
     <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(sessType)}</div>
