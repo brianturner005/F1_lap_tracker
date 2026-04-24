@@ -25,7 +25,7 @@ A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Capture
 - **Tyre compound tracking** — compound (Soft/Medium/Hard/Inter/Wet) recorded per lap with colour-coded pills in the lap table
 - **Personal bests** — all-time best lap per track and session type stored in the database; persists across restarts and sessions (collapsible)
 - **AI lap debrief** — click AI DEBRIEF at any time to get a race-engineer-style written analysis of your session; built-in, no API key required (10 debriefs/day)
-- **Community leaderboard** — compare your track PBs with other Pitwall IQ users; built-in, no configuration required
+- **Community leaderboard** — compare your track PBs with other Pitwall IQ users; shows rank, time, tyre, driver name, and submission date; built-in, no configuration required
 - **One-click launchers** — double-click to start on Windows, macOS, or Linux; browser opens automatically
 - **Browser dashboard** — works on your laptop or any device on the same local network
 
@@ -180,7 +180,7 @@ The debrief is generated via a shared backend — no API key or Azure account ne
 
 ### Community Leaderboard panel
 
-Shown in the sidebar beneath the track map. Displays the top 25 times for the current track and session type. Your own time is highlighted. The panel refreshes automatically when you set a new PB or switch tracks.
+Shown in the sidebar beneath the track map. Displays the top 25 times for the current track and session type — rank, lap time, tyre compound, driver name, and the date the time was set. Your own time is highlighted. The panel refreshes automatically when you set a new PB or switch tracks.
 
 Times are only submitted if you explicitly enable the **SUBMIT PBs** toggle. You can set a display name (defaults to `Anonymous`). Your identity is a randomly generated UUID stored locally in `f1_laps.db` — no account or email is required.
 
