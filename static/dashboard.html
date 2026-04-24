@@ -926,22 +926,40 @@ async function fetchLeaderboard() {
 
 function _buildSessTypeDropdown() {
   const sessSelect = document.getElementById('lb-sesstype-select');
+  const isCommunity = _lbView === 'community';
   const types = [...new Set(
     _lbPbs.filter(pb => pb.track === _lbTrack).map(pb => pb.session_type)
   )];
-  sessSelect.innerHTML = '<option value="all">All Session Types</option>';
-  for (const st of types) {
+
+  sessSelect.innerHTML = '';
+  // "All Session Types" only makes sense for My Times — community fetches one type at a time
+  if (!isCommunity) {
+    const allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = 'All Session Types';
+    sessSelect.appendChild(allOpt);
+  }
+  // In community mode always ensure Race is available even if user hasn't driven it
+  const communityTypes = isCommunity && !types.includes('Race') ? ['Race', ...types] : types;
+  for (const st of communityTypes) {
     const opt = document.createElement('option');
     opt.value = st;
     opt.textContent = st || 'Unknown';
     sessSelect.appendChild(opt);
   }
-  // Keep existing specific selection if still valid, otherwise default to "all"
-  if (_lbSessionType && _lbSessionType !== 'all' && types.includes(_lbSessionType)) {
-    sessSelect.value = _lbSessionType;
+
+  if (isCommunity) {
+    // Default to Race; fall back to first available type
+    const target = types.includes(_lbSessionType) ? _lbSessionType : 'Race';
+    _lbSessionType = target;
+    sessSelect.value = target;
   } else {
-    _lbSessionType = 'all';
-    sessSelect.value = 'all';
+    if (_lbSessionType && _lbSessionType !== 'all' && types.includes(_lbSessionType)) {
+      sessSelect.value = _lbSessionType;
+    } else {
+      _lbSessionType = 'all';
+      sessSelect.value = 'all';
+    }
   }
 }
 
@@ -965,6 +983,7 @@ function onLbSessTypeChange() {
 function switchLbView(view) {
   _lbView = view;
   _setLbBtnActive(view);
+  _buildSessTypeDropdown(); // rebuild so "All Session Types" appears/disappears correctly
   renderLbView();
 }
 
@@ -1032,25 +1051,7 @@ async function renderCommunity() {
     el.innerHTML = `<div class="panel lb-wrap"><p style="color:var(--muted);font-size:.8rem;margin:8px 0">Select a track above.</p></div>`;
     return;
   }
-  const _SESS_PRIORITY = ['Race','Race 2','Race 3','Qualifying 3','Qualifying 2','Qualifying 1',
-                          'Practice 1','Practice 2','Practice 3','OSQ','Time Trial'];
-  let sessType = _lbSessionType;
-  if (!sessType || sessType === 'all') {
-    // Always default to Race for community — don't use the user's personal bests to decide,
-    // since they may have only driven Practice on a track the community has Race times for.
-    sessType = 'Race';
-    _lbSessionType = sessType;
-    const _sel = document.getElementById('lb-sesstype-select');
-    if (_sel) {
-      if (![..._sel.options].some(o => o.value === sessType)) {
-        const opt = document.createElement('option');
-        opt.value = sessType;
-        opt.textContent = sessType;
-        _sel.insertBefore(opt, _sel.options[1]);
-      }
-      _sel.value = sessType;
-    }
-  }
+  const sessType = _lbSessionType || 'Race';
   el.innerHTML = `<div class="panel lb-wrap">
     <div class="panel-title">Community — ${esc(_lbTrack)} · ${esc(sessType)}</div>
     <p style="color:var(--muted);font-size:.75rem;margin:8px 0">Loading…</p>
