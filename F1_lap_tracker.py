@@ -39,7 +39,7 @@ import os
 
 log = logging.getLogger(__name__)
 
-VERSION = "0.10.5"
+VERSION = "0.10.6"
 
 # ── Leaderboard config ───────────────────────────────────────────────────────
 # Default URL is the shared Pitwall IQ backend — no configuration needed.
@@ -1279,16 +1279,21 @@ class Handler(BaseHTTPRequestHandler):
             track_filter = qs.get("track", [None])[0]
             con = sqlite3.connect(DB_PATH)
             con.row_factory = sqlite3.Row
-            _valid = ("track IS NOT NULL AND track != '' AND track != 'Unknown' "
-                      "AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'")
             if track_filter:
                 rows = con.execute(
-                    "SELECT * FROM personal_bests WHERE track=? AND " + _valid + " ORDER BY session_type",
+                    "SELECT * FROM personal_bests"
+                    " WHERE track=?"
+                    " AND track IS NOT NULL AND track != '' AND track != 'Unknown'"
+                    " AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'"
+                    " ORDER BY session_type",
                     (track_filter,)
                 ).fetchall()
             else:
                 rows = con.execute(
-                    "SELECT * FROM personal_bests WHERE " + _valid + " ORDER BY track, session_type"
+                    "SELECT * FROM personal_bests"
+                    " WHERE track IS NOT NULL AND track != '' AND track != 'Unknown'"
+                    " AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'"
+                    " ORDER BY track, session_type"
                 ).fetchall()
             con.close()
             pbs = [dict(r) for r in rows]
