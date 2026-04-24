@@ -39,7 +39,7 @@ import os
 
 log = logging.getLogger(__name__)
 
-VERSION = "0.10.4"
+VERSION = "0.10.5"
 
 # ── Leaderboard config ───────────────────────────────────────────────────────
 # Default URL is the shared Pitwall IQ backend — no configuration needed.
@@ -52,6 +52,8 @@ LEADERBOARD_URL = os.environ.get(
 # included it (the code appends /api/lb-submit etc. itself).
 if LEADERBOARD_URL.endswith("/api"):
     LEADERBOARD_URL = LEADERBOARD_URL[:-4]
+if not LEADERBOARD_URL.startswith("https://"):
+    raise ValueError(f"F1_LEADERBOARD_URL must use https://: {LEADERBOARD_URL!r}")
 
 # ── AI debrief proxy URL ──────────────────────────────────────────────────────
 # Points to the Pitwall IQ Azure Function that proxies AI debrief requests.
@@ -61,6 +63,8 @@ PITWALL_PROXY_URL = os.environ.get(
     "PITWALL_PROXY_URL",
     "https://f1tracker-func-6v3lqkyuhxwkc.azurewebsites.net",
 ).rstrip("/")
+if not PITWALL_PROXY_URL.startswith("https://"):
+    raise ValueError(f"PITWALL_PROXY_URL must use https://: {PITWALL_PROXY_URL!r}")
 
 # ── Shared state ─────────────────────────────────────────────────────────────
 
@@ -975,7 +979,7 @@ def _check_and_apply_update():
     try:
         from urllib.request import urlopen
         print(f"[Update] Checking for updates…")
-        with urlopen(f"{_UPDATE_BASE}/version.txt", timeout=10) as r:
+        with urlopen(f"{_UPDATE_BASE}/version.txt", timeout=10) as r:  # nosec B310 — hardcoded https URL
             remote_ver = r.read().decode("utf-8").strip()
         print(f"[Update] Remote version: {remote_ver}  Local version: {VERSION}")
         if _parse_version(remote_ver) <= _parse_version(VERSION):
@@ -986,7 +990,7 @@ def _check_and_apply_update():
         updated = []
         for rel in _UPDATE_FILES:
             try:
-                with urlopen(f"{_UPDATE_BASE}/{rel}", timeout=30) as r:
+                with urlopen(f"{_UPDATE_BASE}/{rel}", timeout=30) as r:  # nosec B310 — hardcoded https URL
                     content = r.read()
                 dest = os.path.join(script_dir, rel)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -1021,7 +1025,7 @@ def _lb_post(payload, background=True):
             req = UReq(url, data=data,
                        headers={"Content-Type": "application/json"},
                        method="POST")
-            with urlopen(req, timeout=10) as resp:
+            with urlopen(req, timeout=10) as resp:  # nosec B310 — scheme validated at startup
                 result = json.loads(resp.read())
             if result.get("rank"):
                 with state_lock:
@@ -1105,7 +1109,7 @@ def _lb_refresh(track_override=None, session_type_override=None):
         url = (f"{LEADERBOARD_URL}/api/leaderboard"
                f"/{quote(track, safe='')}/{quote(session_type, safe='')}"
                f"?player_id={player_id}")
-        with urlopen(url, timeout=10) as resp:
+        with urlopen(url, timeout=10) as resp:  # nosec B310 — scheme validated at startup
             data = json.loads(resp.read())
         with state_lock:
             state["leaderboard"] = data
@@ -1141,14 +1145,14 @@ def _ai_debrief_proxy(laps, session_info, best_lap_ms, track_pb_ms, track_pb_com
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=35) as resp:
+    with urlopen(req, timeout=35) as resp:  # nosec B310 — scheme validated at startup
         result = json.loads(resp.read())
     return result["debrief"], result.get("remaining")
 
 def udp_listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", 20777))
+    sock.bind(("0.0.0.0", 20777))  # nosec B104 — must bind all interfaces to receive UDP from the game
     sock.settimeout(2.0)
     print("🎮  UDP listener active on port 20777")
     while True:
@@ -1275,16 +1279,16 @@ class Handler(BaseHTTPRequestHandler):
             track_filter = qs.get("track", [None])[0]
             con = sqlite3.connect(DB_PATH)
             con.row_factory = sqlite3.Row
-            _valid = "track IS NOT NULL AND track != '' AND track != 'Unknown' " \
-                     "AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'"
+            _valid = ("track IS NOT NULL AND track != '' AND track != 'Unknown' "
+                      "AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'")
             if track_filter:
                 rows = con.execute(
-                    f"SELECT * FROM personal_bests WHERE track=? AND {_valid} ORDER BY session_type",
+                    "SELECT * FROM personal_bests WHERE track=? AND " + _valid + " ORDER BY session_type",
                     (track_filter,)
                 ).fetchall()
             else:
                 rows = con.execute(
-                    f"SELECT * FROM personal_bests WHERE {_valid} ORDER BY track, session_type"
+                    "SELECT * FROM personal_bests WHERE " + _valid + " ORDER BY track, session_type"
                 ).fetchall()
             con.close()
             pbs = [dict(r) for r in rows]
@@ -1615,7 +1619,7 @@ def main():
     threading.Thread(target=_check_and_apply_update, daemon=True).start()
 
     # Start HTTP server
-    server = HTTPServer(("0.0.0.0", 5000), Handler)
+    server = HTTPServer(("0.0.0.0", 5000), Handler)  # nosec B104 — LAN access is intentional
     print(f"🌐  Dashboard → http://localhost:5000  (v{VERSION})")
     print()
     print("Press Ctrl+C to stop.")
