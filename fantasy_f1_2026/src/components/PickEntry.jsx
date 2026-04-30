@@ -80,8 +80,13 @@ export default function PickEntry({ players }) {
       ) : (
         <>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs text-f1muted tracking-wider">
+            <p className="text-xs text-f1muted tracking-wider flex items-center gap-2">
               {race?.country} PREDICTED ORDER — {race?.name.toUpperCase()}
+              {race?.sprint && (
+                <span className="text-purple-400 border border-purple-400/40 rounded px-1.5 py-0.5 text-xs font-medium">
+                  SPRINT · max 10 pts/driver
+                </span>
+              )}
             </p>
             <button
               onClick={() => setOrder([...DEFAULT_ORDER])}

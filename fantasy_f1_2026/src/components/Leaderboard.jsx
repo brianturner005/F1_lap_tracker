@@ -3,7 +3,9 @@ import { RACES } from '../data/races'
 import { DRIVERS } from '../data/drivers'
 import { getLeaderboard } from '../utils/api'
 
-const SCORING = { 0: 25, 1: 10, 2: 5, 3: 2 }
+const SCORING_GP     = { 0: 25, 1: 10, 2: 5, 3: 2 }
+const SCORING_SPRINT = { 0: 10, 1:  4, 2: 2, 3: 1 }
+const scoringTable = (raceId) => raceId.endsWith('_sprint') ? SCORING_SPRINT : SCORING_GP
 
 function medal(rank) {
   if (rank === 1) return '🥇'
@@ -16,6 +18,8 @@ function RaceBreakdown({ player, raceId, picks, result }) {
   if (!result) return <p className="text-f1muted text-xs px-4 py-2">No result entered yet.</p>
   const playerPicks = picks?.[player]
   if (!playerPicks) return <p className="text-f1muted text-xs px-4 py-2">No pick submitted for this race.</p>
+
+  const table = scoringTable(raceId)
 
   return (
     <table className="w-full text-xs">
@@ -32,7 +36,7 @@ function RaceBreakdown({ player, raceId, picks, result }) {
           const driver = DRIVERS.find(d => d.id === driverId)
           const predictedIdx = playerPicks.indexOf(driverId)
           const diff = predictedIdx === -1 ? null : Math.abs(predictedIdx - actualIdx)
-          const pts = diff == null ? 0 : (SCORING[diff] ?? 0)
+          const pts = diff == null ? 0 : (table[diff] ?? 0)
           return (
             <tr key={driverId} className="border-t border-f1border/50 hover:bg-white/5">
               <td className="px-4 py-1.5 text-f1muted">{actualIdx + 1}</td>
@@ -84,6 +88,7 @@ function PlayerRow({ rank, player, data, allResults, allPicksByRace }) {
                 }`}
               >
                 <span>{race.country}</span>
+                {race.sprint && <span className="text-purple-400 font-bold">S</span>}
                 <span className={pts != null ? 'text-white font-medium' : 'text-f1muted'}>
                   {pts != null ? `${pts}` : '–'}
                 </span>

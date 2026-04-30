@@ -5,7 +5,12 @@ from azure.cosmos import CosmosClient, exceptions
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-SCORING = {0: 25, 1: 10, 2: 5, 3: 2}
+SCORING_GP     = {0: 25, 1: 10, 2: 5, 3: 2}
+SCORING_SPRINT = {0: 10, 1:  4, 2: 2, 3: 1}
+
+
+def scoring_table(race_id: str) -> dict:
+    return SCORING_SPRINT if race_id.endswith("_sprint") else SCORING_GP
 
 
 def get_container():
@@ -22,13 +27,14 @@ def json_response(body, status=200):
     )
 
 
-def score_pick(picks, result):
+def score_pick(picks, result, race_id: str):
+    table = scoring_table(race_id)
     total = 0
     for predicted_idx, driver_id in enumerate(picks):
         try:
             actual_idx = result.index(driver_id)
             diff = abs(predicted_idx - actual_idx)
-            total += SCORING.get(diff, 0)
+            total += table.get(diff, 0)
         except ValueError:
             pass
     return total
@@ -165,7 +171,7 @@ def leaderboard(req: func.HttpRequest) -> func.HttpResponse:
         for player, order in picks_by_race.get(race_id, {}).items():
             if player not in scores:
                 scores[player] = {"total": 0, "races": {}}
-            pts = score_pick(order, result)
+            pts = score_pick(order, result, race_id)
             scores[player]["races"][race_id] = pts
             scores[player]["total"] += pts
 
