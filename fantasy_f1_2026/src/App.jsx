@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { getPlayers } from './utils/storage'
+import { useState, useEffect } from 'react'
+import { getPlayers } from './utils/api'
 import Header from './components/Header'
 import PlayerManager from './components/PlayerManager'
 import PickEntry from './components/PickEntry'
@@ -8,7 +8,11 @@ import Leaderboard from './components/Leaderboard'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('picks')
-  const [players, setPlayers] = useState(() => getPlayers())
+  const [players, setPlayers] = useState([])
+
+  useEffect(() => {
+    getPlayers().then(setPlayers).catch(() => {})
+  }, [])
 
   return (
     <div className="min-h-screen bg-f1dark">

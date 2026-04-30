@@ -21,9 +21,9 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
-          app_location: "/"        # repo root (where package.json lives)
-          output_location: "dist"  # Vite build output
-          # api_location: "api"    # uncomment when you add Azure Functions for shared state
+          app_location: "/"     # repo root (where package.json lives)
+          output_location: "dist"
+          api_location: "api"   # Python Azure Functions — picks, results, leaderboard
 
   close_pull_request:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'

@@ -1,24 +1,38 @@
 import { useState, useEffect } from 'react'
 import { RACES } from '../data/races'
 import { DEFAULT_ORDER } from '../data/drivers'
-import { getResultForRace, saveResultForRace } from '../utils/storage'
+import { getResultForRace, saveResultForRace } from '../utils/api'
 import SortableList from './SortableList'
 
 export default function AdminResult() {
   const [raceId, setRaceId] = useState(RACES[0].id)
   const [order, setOrder] = useState([...DEFAULT_ORDER])
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const existing = getResultForRace(raceId)
-    setOrder(existing ? [...existing] : [...DEFAULT_ORDER])
-    setSaved(false)
+    setLoading(true)
+    setError('')
+    getResultForRace(raceId)
+      .then(result => setOrder(result ? [...result] : [...DEFAULT_ORDER]))
+      .catch(() => setError('Failed to load result'))
+      .finally(() => setLoading(false))
   }, [raceId])
 
-  function handleSave() {
-    saveResultForRace(raceId, order)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+  async function handleSave() {
+    setSaving(true)
+    setError('')
+    try {
+      await saveResultForRace(raceId, order)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {
+      setError('Failed to save — check your connection')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const race = RACES.find(r => r.id === raceId)
@@ -32,7 +46,7 @@ export default function AdminResult() {
         </span>
       </div>
       <p className="text-f1muted text-sm mb-6">
-        Drag drivers into the actual finishing order. Scores are recalculated instantly on save.
+        Drag drivers into the actual finishing order. Scores update for all players on save.
       </p>
 
       <div className="mb-6">
@@ -42,39 +56,41 @@ export default function AdminResult() {
           onChange={e => setRaceId(e.target.value)}
           className="w-full max-w-xs bg-f1card border border-f1border rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-f1red"
         >
-          {RACES.map(r => (
-            <option key={r.id} value={r.id}>
-              {r.country} {r.name}
-            </option>
-          ))}
+          {RACES.map(r => <option key={r.id} value={r.id}>{r.country} {r.name}</option>)}
         </select>
       </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs text-f1muted tracking-wider">
-          {race?.country} OFFICIAL FINISHING ORDER — {race?.name.toUpperCase()}
-        </p>
-        <button
-          onClick={() => setOrder([...DEFAULT_ORDER])}
-          className="text-xs text-f1muted hover:text-white transition-colors"
-        >
-          Reset
-        </button>
-      </div>
+      {loading ? (
+        <div className="text-center py-12 text-f1muted text-sm">Loading…</div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-f1muted tracking-wider">
+              {race?.country} OFFICIAL FINISHING ORDER — {race?.name.toUpperCase()}
+            </p>
+            <button
+              onClick={() => setOrder([...DEFAULT_ORDER])}
+              className="text-xs text-f1muted hover:text-white transition-colors"
+            >
+              Reset
+            </button>
+          </div>
 
-      <SortableList order={order} setOrder={setOrder} />
+          <SortableList order={order} setOrder={setOrder} />
 
-      <div className="mt-6 flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          className="bg-f1red hover:bg-red-700 text-white font-medium text-sm px-6 py-2.5 rounded transition-colors"
-        >
-          Confirm Result
-        </button>
-        {saved && (
-          <span className="text-green-400 text-sm">Result saved — scores updated!</span>
-        )}
-      </div>
+          <div className="mt-6 flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-f1red hover:bg-red-700 disabled:opacity-50 text-white font-medium text-sm px-6 py-2.5 rounded transition-colors"
+            >
+              {saving ? 'Saving…' : 'Confirm Result'}
+            </button>
+            {saved && <span className="text-green-400 text-sm">Result saved — scores updated!</span>}
+            {error && <span className="text-red-400 text-sm">{error}</span>}
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { RACES } from '../data/races'
 import { DRIVERS } from '../data/drivers'
-import { getAllPicks, getAllResults, getPicksForRace } from '../utils/storage'
-import { computeSeasonScores, scorePickAgainstResult } from '../utils/scoring'
+import { getLeaderboard } from '../utils/api'
+
+const SCORING = { 0: 25, 1: 10, 2: 5, 3: 2 }
 
 function medal(rank) {
   if (rank === 1) return '🥇'
@@ -11,16 +12,10 @@ function medal(rank) {
   return `${rank}.`
 }
 
-function RaceBreakdown({ player, raceId }) {
-  const result = getAllResults()[raceId]
-  const picks = getPicksForRace(raceId)[player]
-
-  if (!result) {
-    return <p className="text-f1muted text-xs px-4 py-2">No result entered yet.</p>
-  }
-  if (!picks) {
-    return <p className="text-f1muted text-xs px-4 py-2">No pick submitted for this race.</p>
-  }
+function RaceBreakdown({ player, raceId, picks, result }) {
+  if (!result) return <p className="text-f1muted text-xs px-4 py-2">No result entered yet.</p>
+  const playerPicks = picks?.[player]
+  if (!playerPicks) return <p className="text-f1muted text-xs px-4 py-2">No pick submitted for this race.</p>
 
   return (
     <table className="w-full text-xs">
@@ -35,18 +30,16 @@ function RaceBreakdown({ player, raceId }) {
       <tbody>
         {result.map((driverId, actualIdx) => {
           const driver = DRIVERS.find(d => d.id === driverId)
-          const predictedIdx = picks.indexOf(driverId)
+          const predictedIdx = playerPicks.indexOf(driverId)
           const diff = predictedIdx === -1 ? null : Math.abs(predictedIdx - actualIdx)
-          const pts = predictedIdx === -1 ? 0 : (diff === 0 ? 25 : diff === 1 ? 10 : diff === 2 ? 5 : diff === 3 ? 2 : 0)
+          const pts = diff == null ? 0 : (SCORING[diff] ?? 0)
           return (
             <tr key={driverId} className="border-t border-f1border/50 hover:bg-white/5">
               <td className="px-4 py-1.5 text-f1muted">{actualIdx + 1}</td>
               <td className="px-4 py-1.5 text-white">{driver?.name ?? driverId}</td>
               <td className="px-4 py-1.5 text-f1muted">
                 {predictedIdx === -1 ? '—' : `P${predictedIdx + 1}`}
-                {diff != null && diff > 0 && (
-                  <span className="text-f1muted/60 ml-1">(±{diff})</span>
-                )}
+                {diff != null && diff > 0 && <span className="text-f1muted/60 ml-1">(±{diff})</span>}
                 {diff === 0 && <span className="text-green-400 ml-1">✓</span>}
               </td>
               <td className={`px-4 py-1.5 text-right font-medium ${pts > 0 ? 'text-white' : 'text-f1muted'}`}>
@@ -60,9 +53,8 @@ function RaceBreakdown({ player, raceId }) {
   )
 }
 
-function PlayerRow({ rank, player, data, allResults }) {
+function PlayerRow({ rank, player, data, allResults, allPicksByRace }) {
   const [expandedRace, setExpandedRace] = useState(null)
-
   const racesWithResults = RACES.filter(r => allResults[r.id])
 
   return (
@@ -79,7 +71,7 @@ function PlayerRow({ rank, player, data, allResults }) {
       {racesWithResults.length > 0 && (
         <div className="px-4 py-2 bg-f1dark/50 flex flex-wrap gap-1">
           {racesWithResults.map(race => {
-            const pts = data.races[race.id] ?? null
+            const pts = data.races?.[race.id] ?? null
             const isExpanded = expandedRace === race.id
             return (
               <button
@@ -103,7 +95,12 @@ function PlayerRow({ rank, player, data, allResults }) {
 
       {expandedRace && (
         <div className="border-t border-f1border bg-f1dark/30">
-          <RaceBreakdown player={player} raceId={expandedRace} />
+          <RaceBreakdown
+            player={player}
+            raceId={expandedRace}
+            picks={allPicksByRace[expandedRace]}
+            result={allResults[expandedRace]}
+          />
         </div>
       )}
     </div>
@@ -111,9 +108,24 @@ function PlayerRow({ rank, player, data, allResults }) {
 }
 
 export default function Leaderboard({ players }) {
-  const allPicks = getAllPicks()
-  const allResults = getAllResults()
-  const scores = computeSeasonScores(allPicks, allResults)
+  const [scores, setScores] = useState({})
+  const [allResults, setAllResults] = useState({})
+  const [allPicksByRace, setAllPicksByRace] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setLoading(true)
+    getLeaderboard()
+      .then(data => {
+        setScores(data.scores ?? {})
+        setAllResults(data.results ?? {})
+        // picks by race are embedded in leaderboard for breakdown display
+        setAllPicksByRace(data.picksByRace ?? {})
+      })
+      .catch(() => setError('Failed to load leaderboard'))
+      .finally(() => setLoading(false))
+  }, [])
 
   const ranked = players
     .map(player => ({ player, data: scores[player] ?? { total: 0, races: {} } }))
@@ -121,13 +133,14 @@ export default function Leaderboard({ players }) {
 
   const racesCompleted = RACES.filter(r => allResults[r.id]).length
 
+  if (loading) return <div className="text-center py-16 text-f1muted text-sm">Loading leaderboard…</div>
+  if (error) return <div className="text-center py-16 text-red-400 text-sm">{error}</div>
+
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg font-bold text-white">Season Leaderboard</h2>
-        <span className="text-xs text-f1muted">
-          {racesCompleted} / {RACES.length} races complete
-        </span>
+        <span className="text-xs text-f1muted">{racesCompleted} / {RACES.length} races complete</span>
       </div>
       <p className="text-f1muted text-sm mb-6">
         Click a race flag to see the per-driver score breakdown.
@@ -146,6 +159,7 @@ export default function Leaderboard({ players }) {
               player={player}
               data={data}
               allResults={allResults}
+              allPicksByRace={allPicksByRace}
             />
           ))}
         </div>

@@ -2,63 +2,79 @@
 
 A web app for a small group (2–5 players) to predict full 22-driver race finishing orders across the 2026 F1 season, with cumulative points on a season leaderboard.
 
+All data is stored server-side — players just open the URL to submit picks from any device.
+
 ## Features
 
 - **Player management** — add named players to the league
 - **Drag-and-drop picks** — arrange all 22 drivers in predicted finishing order per race
 - **Admin result entry** — same drag-and-drop interface for the official result
-- **Auto-scoring** — exact position: 25 pts · ±1: 10 pts · ±2: 5 pts · ±3: 2 pts · ±4+: 0 pts
+- **Auto-scoring** — exact: 25 pts · ±1: 10 pts · ±2: 5 pts · ±3: 2 pts · ±4+: 0 pts
 - **Season leaderboard** — total points ranked, with expandable per-race breakdowns
-- **F1-themed dark UI** — black/red, all 11 team colours
-- **localStorage persistence** — no backend or account required
+- **Server-side storage** — Azure Cosmos DB via Azure Functions; no local data
 
-## 2026 Driver Lineup
+## Tech Stack
 
-22 drivers across 11 teams: McLaren, Mercedes, Red Bull, Ferrari, Aston Martin, Williams, Racing Bulls, Haas, Alpine, Audi, Cadillac.
+| Layer | Technology |
+|---|---|
+| Frontend | React + Tailwind + @dnd-kit/sortable |
+| API | Python Azure Functions (v2 model) |
+| Database | Azure Cosmos DB (serverless) |
+| Hosting | Azure Static Web Apps (Free tier) |
 
 ## Local Development
 
 ```bash
+# Terminal 1 — frontend
 npm install
 npm run dev
+
+# Terminal 2 — Functions API
+cp api/local.settings.json.example api/local.settings.json
+# Fill in COSMOS_CONNECTION_STRING in local.settings.json
+cd api && func start
 ```
 
-Open [http://localhost:5173](http://localhost:5173).
+Frontend runs on [http://localhost:5173](http://localhost:5173); the dev proxy forwards `/api/*` to the Functions on port 7071.
 
-## Hosting on Azure Static Web Apps
+## Deploy to Azure
 
-### One-time setup (Azure Portal)
+### Prerequisites
 
-1. Push this repo to GitHub
-2. Go to **Azure Portal → Create a resource → Static Web App**
-3. Fill in:
-   - **Name**: `fantasy-f1-2026` (or similar)
-   - **Plan type**: Free
-   - **Deployment source**: GitHub — connect your account and select this repo + `main` branch
-   - **Build preset**: React
-   - **App location**: `/`
-   - **Output location**: `dist`
-4. Click **Review + create**
+```bash
+# macOS
+brew install azure-cli jq
+npm install -g azure-functions-core-tools@4
+az login
 
-Azure generates a `AZURE_STATIC_WEB_APPS_API_TOKEN` secret in your GitHub repo automatically and triggers the first deployment via the included workflow at `.github/workflows/azure-static-web-apps.yml`.
+# Ubuntu/Debian
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+sudo apt install jq
+npm install -g azure-functions-core-tools@4
+az login
+```
 
-After that, every push to `main` redeploys automatically.
+### One-command deploy
 
-### Estimated cost
+```bash
+cd infra
+chmod +x deploy.sh
+./deploy.sh <resource-group> <azure-region> <github-owner/repo>
+# e.g.: ./deploy.sh fantasy-f1-rg eastus brianturner005/fantasy_f1_2026
+```
+
+The script:
+1. Creates the resource group
+2. Deploys Cosmos DB + Azure Static Web App via Bicep
+3. Wires `COSMOS_CONNECTION_STRING` into the Static Web App's settings
+4. Prints your site URL and the `AZURE_STATIC_WEB_APPS_API_TOKEN` to add to GitHub secrets
+
+After adding the secret, every push to `main` triggers a full redeploy via the included GitHub Actions workflow.
+
+## Estimated Cost
 
 | Resource | Cost |
 |---|---|
-| Azure Static Web Apps (Free tier) | **$0/month** |
-
----
-
-## Upgrading to shared state (optional)
-
-localStorage is per-browser, so players on separate devices won't see each other's picks. To share state across devices, add an Azure Functions API + Cosmos DB:
-
-1. Create an `api/` folder alongside `src/` with Azure Functions endpoints for picks, results, and players
-2. Uncomment `api_location: "api"` in the GitHub Actions workflow — Azure Static Web Apps deploys managed functions automatically
-3. Swap the `storage.js` utility calls from localStorage to `fetch('/api/...')` calls
-4. Provision Cosmos DB (serverless, ~$0–1/month for light use) — you can reuse an existing Cosmos DB account if you already have one
-
-Total estimated cost for the full stack: **~$0–1/month**.
+| Azure Static Web Apps (Free tier) | $0/month |
+| Cosmos DB (serverless, light use) | ~$0–1/month |
+| **Total** | **~$0–1/month** |
