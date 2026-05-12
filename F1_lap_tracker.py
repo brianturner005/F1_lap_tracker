@@ -39,7 +39,7 @@ import os
 
 log = logging.getLogger(__name__)
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 
 # ── Leaderboard config ───────────────────────────────────────────────────────
 # Default URL is the shared Pitwall IQ backend — no configuration needed.
