@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pitwall IQ — F1 Lap Tracker</title>
+  <title>Pitwall IQ — F1 &amp; iRacing Lap Tracker</title>
   <style>
     :root {
       --accent: #00b86b;
@@ -451,9 +451,9 @@
 
 <!-- HERO -->
 <section class="hero">
-  <div class="badge">F1 25 &bull; F1 24 &bull; F1 23</div>
+  <div class="badge">F1 25 &bull; F1 24 &bull; F1 23 &bull; iRacing</div>
   <h1>Your personal<br><em>race engineer</em><br>in the browser</h1>
-  <p>Pitwall IQ captures every lap time, sector split, and tyre stint automatically via F1's built-in UDP telemetry — no mods, no middleware, no fuss.</p>
+  <p>Pitwall IQ captures every lap time, sector split, and tyre stint automatically — from F1 25/24/23 via UDP telemetry or iRacing via shared memory. No mods, no middleware, no fuss.</p>
   <div class="hero-actions">
     <a href="https://github.com/brianturner005/f1_lap_tracker#setup" class="btn btn-primary">Get started free</a>
     <a href="https://github.com/brianturner005/f1_lap_tracker" class="btn btn-outline">View on GitHub</a>
@@ -626,12 +626,12 @@
   <div class="container">
     <p class="section-label">How it works</p>
     <h2>Up and running in minutes</h2>
-    <p class="section-intro" style="margin-bottom: 2.5rem;">Pitwall IQ uses F1 25's built-in UDP telemetry — no mods or extra software required.</p>
+    <p class="section-intro" style="margin-bottom: 2.5rem;">Pitwall IQ auto-detects your sim and connects automatically — F1 25/24/23 via built-in UDP telemetry, iRacing via shared memory. No mods or extra software required.</p>
     <div class="steps">
       <div class="step">
         <div class="step-num">01</div>
-        <h3>Enable UDP in-game</h3>
-        <p>Go to Settings → Telemetry Settings. Set UDP Telemetry to On, IP to 127.0.0.1, and port to 20777. One-time setup.</p>
+        <h3>Enable telemetry</h3>
+        <p><strong>F1:</strong> Settings → Telemetry Settings — UDP On, IP 127.0.0.1, port 20777. One-time setup.<br><br><strong>iRacing:</strong> Run <code>pip install pyirsdk</code> once. No in-game config needed.</p>
       </div>
       <div class="step">
         <div class="step-num">02</div>
@@ -641,7 +641,7 @@
       <div class="step">
         <div class="step-num">03</div>
         <h3>Enter a session</h3>
-        <p>Load into any session in F1 25. The dashboard status switches to <strong>LIVE TELEMETRY</strong> and data starts populating immediately.</p>
+        <p>Load into any session in F1 25 or iRacing. The dashboard status switches to <strong>LIVE TELEMETRY</strong> or <strong>iRacing — LIVE</strong> and data starts populating immediately.</p>
       </div>
       <div class="step">
         <div class="step-num">04</div>
@@ -679,12 +679,21 @@
     <p class="section-label">Requirements</p>
     <div class="req-box">
       <div>
-        <h3>Core app</h3>
+        <h3>F1 25 / 24 / 23</h3>
         <ul>
           <li>Python 3.8 or newer</li>
           <li>F1 25, F1 24, or F1 23 on PC</li>
           <li>No third-party packages</li>
           <li>Works fully offline</li>
+        </ul>
+      </div>
+      <div>
+        <h3>iRacing</h3>
+        <ul>
+          <li>Windows only</li>
+          <li>pip install pyirsdk (one-time)</li>
+          <li>No in-game config needed</li>
+          <li>Separate PBs &amp; leaderboard</li>
         </ul>
       </div>
       <div>
@@ -700,7 +709,7 @@
         <ul>
           <li>Opt-in via toggle</li>
           <li>No account or sign-up</li>
-          <li>Console versions supported</li>
+          <li>Per-sim leaderboards</li>
         </ul>
       </div>
     </div>
@@ -721,7 +730,7 @@
 
 <!-- FOOTER -->
 <footer>
-  <p>Pitwall IQ &mdash; open source F1 lap tracker &bull; <a href="https://github.com/brianturner005/f1_lap_tracker">GitHub</a></p>
+  <p>Pitwall IQ &mdash; open source F1 &amp; iRacing lap tracker &bull; <a href="https://github.com/brianturner005/f1_lap_tracker">GitHub</a></p>
   <p style="margin-top: 0.4rem;">Not affiliated with Formula 1, FIA, or EA Sports.</p>
 </footer>
 

@@ -1,6 +1,6 @@
 # Pitwall IQ
 
-A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Captures lap times, sector splits, live telemetry, and race results automatically via the game's built-in UDP telemetry — no mods or third-party middleware required.
+A lightweight local lap time tracker for **F1 25** (F1 24/23) and **iRacing** on PC. Captures lap times, sector splits, live telemetry, and race results automatically — no mods or third-party middleware required.
 
 -----
 
@@ -35,7 +35,12 @@ A lightweight local lap time tracker for **F1 25** (and F1 24/23) on PC. Capture
 
 - Python 3.8+
 
-No third-party packages required — everything uses the Python standard library.
+**F1 mode** — no third-party packages required. Everything uses the Python standard library.
+
+**iRacing mode** — requires `pyirsdk` (Windows only, one-time install):
+```bash
+pip install pyirsdk
+```
 
 > SQLite is part of Python's standard library. The AI debrief and community leaderboard features use `urllib` (also stdlib) to communicate with the shared Pitwall IQ backend.
 
@@ -43,7 +48,9 @@ No third-party packages required — everything uses the Python standard library
 
 ## Quick Start
 
-### 1. In-game telemetry (one-time)
+### F1 25 / F1 24 / F1 23
+
+#### 1. In-game telemetry (one-time)
 
 In F1 25, go to **Settings → Telemetry Settings** and configure:
 
@@ -55,7 +62,7 @@ In F1 25, go to **Settings → Telemetry Settings** and configure:
 | UDP Port       | **20777**     |
 | Broadcast Mode | **Off**       |
 
-### 2. Launch the app
+#### 2. Launch the app
 
 **Windows** — double-click `launch_windows.bat`
 
@@ -76,11 +83,32 @@ python3 F1_lap_tracker.py
 
 All launchers automatically open **http://localhost:5000** in your default browser once the server is ready.
 
+### iRacing
+
+#### 1. Install pyirsdk (one-time, Windows only)
+
+```bash
+pip install pyirsdk
+```
+
+#### 2. Launch the app
+
+Same launchers as above. At startup you'll see:
+```
+🏁  iRacing source active (waiting for iRacing...)
+```
+
+#### 3. Start iRacing and load into a session
+
+Once you're on track the dashboard status indicator switches to **iRacing — LIVE** and data populates automatically.
+
+> iRacing and F1 can both be set up at the same time. If F1 UDP packets arrive they take priority; if only iRacing is running it connects instead.
+
 -----
 
 ## Usage
 
-Start the launcher before or after launching F1 25 — order doesn't matter. Once the game starts broadcasting telemetry (typically when you enter a session), the dashboard status indicator will switch to **LIVE TELEMETRY** and data will begin populating automatically.
+Start the launcher before or after launching your sim — order doesn't matter. Once the game starts broadcasting telemetry (typically when you enter a session), the dashboard status indicator will switch to **LIVE TELEMETRY** (F1) or **iRacing — LIVE** and data will begin populating automatically.
 
 ### Header controls
 
@@ -217,19 +245,26 @@ The app exposes a small REST API you can query directly:
 
 ## How It Works
 
-F1 25 broadcasts UDP packets on your local network containing real-time telemetry data. This app runs two threads simultaneously:
+The app auto-detects which sim is running and reads telemetry from it:
 
-- **UDP listener** on port `20777` — parses six packet types:
-  - Packet ID 0 (Motion) — car position (X/Z) and G-forces for the track map and G-force circle
-  - Packet ID 1 (Session Data) — track, session type, weather
-  - Packet ID 2 (Lap Data) — lap times and sector splits
-  - Packet ID 3 (Event) — fastest lap detection (FTLP event)
-  - Packet ID 6 (Car Telemetry) — speed, throttle, brake, gear, steering, RPM, and rev-lights percent for telemetry charts and the live rev-lights panel
-  - Packet ID 7 (Car Status) — tyre compound
-  - Packet ID 8 (Final Classification) — race finishing position, points, and result status
+### F1 25 / F1 24 / F1 23
+F1 25 broadcasts UDP packets on your local network. The app parses:
+- Packet ID 0 (Motion) — car position (X/Z) and G-forces
+- Packet ID 1 (Session Data) — track, session type, weather
+- Packet ID 2 (Lap Data) — lap times and sector splits
+- Packet ID 3 (Event) — fastest lap detection
+- Packet ID 6 (Car Telemetry) — speed, throttle, brake, gear, steering, RPM, rev-lights
+- Packet ID 7 (Car Status) — tyre compound
+- Packet ID 8 (Final Classification) — race finishing position and points
+
+### iRacing
+iRacing exposes telemetry through a Windows shared memory API (the iRacing SDK). The app reads this at 30 Hz via `pyirsdk`, mapping speed, throttle, brake, gear, RPM, G-forces, tyre wear, and fuel directly to the same dashboard data the F1 source produces. Sector times are derived from lap distance percentage as the car crosses the sector boundaries defined in iRacing's session data. No UDP configuration is needed.
+
+### Storage and server
+Both sources share the same storage and server:
 - **HTTP server** on port `5000` — serves the dashboard and API endpoints; the browser polls `/api/state` every second
-
-Each completed lap is written to `f1_laps.db` (SQLite) immediately. If the lap beats the all-time best for that track and session type, the `personal_bests` table is updated at the same time. When a Final Classification packet arrives at the end of a race, the result is written to the `race_results` table.
+- Each completed lap is written to `f1_laps.db` (SQLite) immediately, tagged with the active sim
+- Personal bests are tracked per sim — F1 and iRacing PBs for the same track are stored separately and never overwrite each other
 
 -----
 
@@ -253,9 +288,15 @@ If you want to host a private leaderboard for your own group, see [HOSTING.md](H
 
 **Dashboard shows "Waiting for telemetry…"**
 
+*F1:*
 - Confirm UDP Telemetry is set to **On** in-game
 - Confirm the IP is `127.0.0.1` and port is `20777`
 - Make sure you're in an active session (not the main menu)
+
+*iRacing:*
+- Confirm `pyirsdk` is installed (`pip install pyirsdk`) and the startup banner shows `🏁 iRacing source active`
+- Make sure you are on track (iRacing only sends telemetry once the car is out of the garage)
+- iRacing support is Windows-only
 
 **AI Debrief button doesn't appear**
 
@@ -283,8 +324,10 @@ If you want to host a private leaderboard for your own group, see [HOSTING.md](H
 
 ## Notes
 
-- This app is built for **F1 25** but is compatible with F1 2023 and F1 2024 using the same UDP format.
-- Console versions (PlayStation, Xbox) can also broadcast telemetry to a PC on the same network — set the UDP IP to your PC's local IP instead of `127.0.0.1` and ensure both devices are on the same network.
+- Built for **F1 25** and compatible with F1 2023/2024 using the same UDP format.
+- **iRacing** support requires `pyirsdk` and Windows. The app runs in F1-only mode on macOS and Linux without it.
+- iRacing sector times are approximate — derived from lap distance percentage at sector boundary crossings rather than explicit game packets.
+- Console versions of F1 (PlayStation, Xbox) can also broadcast telemetry to a PC on the same network — set the UDP IP to your PC's local IP instead of `127.0.0.1` and ensure both devices are on the same network.
 - No lap or session data is sent externally unless you enable the leaderboard opt-in toggle. The AI debrief sends only session metadata and lap times (no personal information) to the shared backend.
 
 -----
