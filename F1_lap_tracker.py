@@ -122,6 +122,8 @@ state = {
     "fuel_capacity":     None,                      # tank capacity kg (from Car Status)
     "fuel_remaining_laps": None,                    # estimated laps of fuel remaining (from Car Status)
     "update_available":  None,                      # set to version string when update is downloaded
+    "sim":               "F1",                      # active telemetry source: "F1" or "iRacing"
+    "iracing_connected": False,                     # True when iRacing shared memory is readable
 }
 
 TRACK_IDS = {
@@ -227,18 +229,56 @@ def init_db():
             con.execute(col_ddl)
         except Exception as e:
             log.debug("DB migration (expected on existing DB): %s", e)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS personal_bests (
-            track        TEXT NOT NULL,
-            session_type TEXT NOT NULL,
-            lap_time_ms  INTEGER NOT NULL,
-            lap_time     TEXT NOT NULL,
-            compound     TEXT,
-            set_at       TEXT,
-            session_id   INTEGER,
-            PRIMARY KEY (track, session_type)
-        )
-    """)
+    # personal_bests: recreate with sim in PK if the column is missing
+    pb_cols = [r[1] for r in con.execute("PRAGMA table_info(personal_bests)").fetchall()]
+    if "sim" not in pb_cols:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS personal_bests (
+                track        TEXT NOT NULL,
+                session_type TEXT NOT NULL,
+                lap_time_ms  INTEGER NOT NULL,
+                lap_time     TEXT NOT NULL,
+                compound     TEXT,
+                set_at       TEXT,
+                session_id   INTEGER,
+                PRIMARY KEY (track, session_type)
+            )
+        """)
+        con.execute("""
+            CREATE TABLE personal_bests_v2 (
+                sim          TEXT NOT NULL DEFAULT 'F1',
+                track        TEXT NOT NULL,
+                session_type TEXT NOT NULL,
+                lap_time_ms  INTEGER NOT NULL,
+                lap_time     TEXT NOT NULL,
+                compound     TEXT,
+                set_at       TEXT,
+                session_id   INTEGER,
+                PRIMARY KEY (sim, track, session_type)
+            )
+        """)
+        con.execute("""
+            INSERT INTO personal_bests_v2
+                (sim, track, session_type, lap_time_ms, lap_time, compound, set_at, session_id)
+            SELECT 'F1', track, session_type, lap_time_ms, lap_time, compound, set_at, session_id
+            FROM personal_bests
+        """)
+        con.execute("DROP TABLE personal_bests")
+        con.execute("ALTER TABLE personal_bests_v2 RENAME TO personal_bests")
+    else:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS personal_bests (
+                sim          TEXT NOT NULL DEFAULT 'F1',
+                track        TEXT NOT NULL,
+                session_type TEXT NOT NULL,
+                lap_time_ms  INTEGER NOT NULL,
+                lap_time     TEXT NOT NULL,
+                compound     TEXT,
+                set_at       TEXT,
+                session_id   INTEGER,
+                PRIMARY KEY (sim, track, session_type)
+            )
+        """)
     con.execute("""
         CREATE TABLE IF NOT EXISTS race_results (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -261,6 +301,8 @@ def init_db():
     for col in [
         "ALTER TABLE laps ADD COLUMN compound TEXT",
         "ALTER TABLE laps ADD COLUMN is_track_pb INTEGER DEFAULT 0",
+        "ALTER TABLE sessions ADD COLUMN sim TEXT DEFAULT 'F1'",
+        "ALTER TABLE race_results ADD COLUMN sim TEXT DEFAULT 'F1'",
     ]:
         try:
             con.execute(col)
@@ -269,11 +311,11 @@ def init_db():
     con.commit()
     con.close()
 
-def db_create_session(track, session_type, weather, started_at):
+def db_create_session(track, session_type, weather, started_at, sim="F1"):
     con = sqlite3.connect(DB_PATH)
     cur = con.execute(
-        "INSERT INTO sessions (track, session_type, weather, started_at) VALUES (?,?,?,?)",
-        (track, session_type, weather, started_at)
+        "INSERT INTO sessions (track, session_type, weather, started_at, sim) VALUES (?,?,?,?,?)",
+        (track, session_type, weather, started_at, sim)
     )
     session_id = cur.lastrowid
     con.commit()
@@ -315,23 +357,23 @@ def db_save_lap(session_id, lap, trace=None, tyre_wear=None, tyre_damage=None):
     con.commit()
     con.close()
 
-def db_get_track_pb(track, session_type):
+def db_get_track_pb(track, session_type, sim="F1"):
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     row = con.execute(
-        "SELECT * FROM personal_bests WHERE track=? AND session_type=?",
-        (track, session_type)
+        "SELECT * FROM personal_bests WHERE sim=? AND track=? AND session_type=?",
+        (sim, track, session_type)
     ).fetchone()
     con.close()
     return dict(row) if row else None
 
-def db_upsert_track_pb(track, session_type, lap_time_ms, lap_time, compound, session_id, set_at):
+def db_upsert_track_pb(track, session_type, lap_time_ms, lap_time, compound, session_id, set_at, sim="F1"):
     con = sqlite3.connect(DB_PATH)
     con.execute(
         """INSERT OR REPLACE INTO personal_bests
-           (track, session_type, lap_time_ms, lap_time, compound, session_id, set_at)
-           VALUES (?,?,?,?,?,?,?)""",
-        (track, session_type, lap_time_ms, lap_time, compound, session_id, set_at)
+           (sim, track, session_type, lap_time_ms, lap_time, compound, session_id, set_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (sim, track, session_type, lap_time_ms, lap_time, compound, session_id, set_at)
     )
     con.commit()
     con.close()
@@ -503,6 +545,7 @@ def parse_session_packet(data, player_idx):
             state["session"]["track"]   = track_name
             state["total_laps"]         = total_laps_val
             state["udp_connected"]      = True
+            state["sim"]                = "F1"
             if state["session"]["started_at"] is None:
                 started_at = datetime.now().isoformat()
                 state["session"]["started_at"] = started_at
@@ -520,7 +563,7 @@ def parse_session_packet(data, player_idx):
             db_update_session(current_session_id, track_name, effective_session_name, weather_name)
 
         if load_pb:
-            pb = db_get_track_pb(track_name, effective_session_name)
+            pb = db_get_track_pb(track_name, effective_session_name, sim="F1")
             with state_lock:
                 if pb:
                     state["track_pb_ms"]       = pb["lap_time_ms"]
@@ -707,7 +750,7 @@ def parse_lap_data_packet(data, player_idx):
             db_save_lap(save_session_id, lap_record, trace=saved_trace,
                         tyre_wear=saved_tyre_wear, tyre_damage=saved_tyre_damage)
         if save_pb_data is not None:
-            db_upsert_track_pb(*save_pb_data)
+            db_upsert_track_pb(*save_pb_data, sim="F1")
             with state_lock:
                 _opt_in  = state.get("leaderboard_opt_in", False)
                 _pid     = state.get("player_id", "")
@@ -1067,6 +1110,7 @@ def _lb_seed_all():
     for pb in pbs:
         if not pb.get("lap_time_ms"):
             continue
+        pb_sim = pb.get("sim", "F1")
         result = _lb_post({
             "player_id":    player_id,
             "display_name": display_name,
@@ -1076,6 +1120,7 @@ def _lb_seed_all():
             "lap_time":     pb["lap_time"],
             "compound":     pb.get("compound") or "",
             "submitted_at": now,
+            "sim":          pb_sim,
         }, background=False)
         ok = result and result.get("ok")
         print(f"[lb-seed] {pb['track']} / {pb['session_type']}: {'ok rank #' + str(result.get('rank')) if ok else result}")
@@ -1095,6 +1140,7 @@ def _lb_refresh(track_override=None, session_type_override=None):
             track        = track_override or state["session"].get("track", "Unknown")
             session_type = session_type_override or state["session"].get("session_type", "Unknown")
             player_id    = state.get("player_id") or ""
+            sim          = state.get("sim", "F1")
         if track in ("Unknown", None, ""):
             # No active session — fall back to the most recently driven track
             con = sqlite3.connect(DB_PATH)
@@ -1108,7 +1154,7 @@ def _lb_refresh(track_override=None, session_type_override=None):
             track, session_type = row[0], row[1]
         url = (f"{LEADERBOARD_URL}/api/leaderboard"
                f"/{quote(track, safe='')}/{quote(session_type, safe='')}"
-               f"?player_id={player_id}")
+               f"?player_id={player_id}&sim={quote(sim, safe='')}")
         with urlopen(url, timeout=10) as resp:  # nosec B310 — scheme validated at startup
             data = json.loads(resp.read())
         with state_lock:
@@ -1619,6 +1665,25 @@ def main():
     # Start UDP listener in background
     t = threading.Thread(target=udp_listener, daemon=True)
     t.start()
+
+    # Optionally start iRacing source (requires pyirsdk on Windows)
+    try:
+        from iracing_source import start_iracing_source, IRACING_AVAILABLE
+        if IRACING_AVAILABLE:
+            ir_callbacks = {
+                "db_create_session": db_create_session,
+                "db_close_session":  db_close_session,
+                "db_save_lap":       db_save_lap,
+                "db_get_track_pb":   db_get_track_pb,
+                "db_upsert_track_pb": db_upsert_track_pb,
+                "lb_post":           _lb_post,
+            }
+            start_iracing_source(state, state_lock, ir_callbacks)
+            print("🏁  iRacing source active (waiting for iRacing...)")
+        else:
+            print("ℹ️   iRacing support: install pyirsdk to enable")
+    except ImportError:
+        pass  # iracing_source.py not present — F1-only mode
 
     # Check for updates in background (after startup settles)
     threading.Thread(target=_check_and_apply_update, daemon=True).start()

@@ -1,0 +1,3 @@
+# iRacing telemetry support (Windows only — not required for F1 mode)
+# Install with: pip install pyirsdk
+pyirsdk>=1.4.0
