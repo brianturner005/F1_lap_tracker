@@ -152,6 +152,9 @@ def _handle_submit(body) -> func.HttpResponse:
     lap_time: str = str(body["lap_time"]).strip()
     compound: str = str(body.get("compound", "")).strip()
     submitted_at: str = str(body["submitted_at"]).strip()
+    sim: str = str(body.get("sim", "F1")).strip()
+    if sim not in ("F1", "iRacing"):
+        sim = "F1"
 
     _VALID_COMPOUNDS = {"Soft", "Medium", "Hard", "Inter", "Wet", ""}
 
@@ -178,7 +181,9 @@ def _handle_submit(body) -> func.HttpResponse:
         return _error("Invalid compound value.")
 
     doc_id = f"{player_id}_{track}_{session_type}".replace(" ", "_")
-    partition_key_value = f"{track}|{session_type}"
+    # F1 keeps the original partition key format for backward compatibility;
+    # other sims get a prefixed namespace so times never intermix.
+    partition_key_value = f"{track}|{session_type}" if sim == "F1" else f"{sim}|{track}|{session_type}"
 
     document = {
         "id": doc_id,
@@ -248,11 +253,14 @@ def leaderboard(req: func.HttpRequest) -> func.HttpResponse:
     track: str = req.route_params.get("track", "").strip()
     session_type: str = req.route_params.get("session_type", "").strip()
     player_id: str = req.params.get("player_id", "").strip()
+    sim: str = req.params.get("sim", "F1").strip()
+    if sim not in ("F1", "iRacing"):
+        sim = "F1"
 
     if not track or not session_type:
         return _error("track and session_type path parameters are required.")
 
-    partition_key_value = f"{track}|{session_type}"
+    partition_key_value = f"{track}|{session_type}" if sim == "F1" else f"{sim}|{track}|{session_type}"
     container = _get_container(LEADERBOARD_CONTAINER)
 
     top_query = (

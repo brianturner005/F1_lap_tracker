@@ -1625,7 +1625,7 @@ function render(d) {
   if (d.udp_connected) {
     dot.className = 'status-dot live';
     stxt.className = 'status-text live';
-    stxt.textContent = 'LIVE TELEMETRY';
+    stxt.textContent = d.sim === 'iRacing' ? 'iRacing — LIVE' : 'LIVE TELEMETRY';
   } else {
     dot.className = 'status-dot';
     stxt.className = 'status-text';
