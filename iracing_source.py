@@ -129,16 +129,20 @@ class IRacingSource:
 
         while True:
             try:
-                connected = (self._ir.is_initialized and self._ir.is_connected)
+                # startup() return value is unreliable across pyirsdk versions
+                # (returns None in 2.x, bool in 1.x). Call it when not yet
+                # initialized, then check is_connected independently.
+                if not self._ir.is_initialized:
+                    self._ir.startup()
+
+                connected = bool(self._ir.is_connected)
+
                 if not connected:
-                    if self._ir.startup():
-                        connected = True
-                    else:
-                        if was_connected:
-                            self._on_disconnect()
-                            was_connected = False
-                        time.sleep(2.0)
-                        continue
+                    if was_connected:
+                        self._on_disconnect()
+                        was_connected = False
+                    time.sleep(2.0)
+                    continue
 
                 if not was_connected:
                     self._on_connect()
@@ -148,7 +152,7 @@ class IRacingSource:
                 self._process_frame()
 
             except Exception as exc:
-                log.debug("iRacing source error: %s", exc)
+                log.warning("iRacing source error: %s", exc)
                 time.sleep(1.0)
                 continue
 
@@ -211,9 +215,14 @@ class IRacingSource:
             return
 
         # ── Session info ──────────────────────────────────────────────────────
-        track = str(
-            _safe(ir, "TrackDisplayName") or _safe(ir, "TrackName") or "Unknown"
-        ).strip() or "Unknown"
+        # Track name lives in the WeekendInfo YAML block, not as a telemetry var.
+        try:
+            wi = ir["WeekendInfo"] or {}
+            track = str(
+                wi.get("TrackDisplayName") or wi.get("TrackName") or "Unknown"
+            ).strip() or "Unknown"
+        except Exception:
+            track = "Unknown"
 
         session_num = int(_safe(ir, "SessionNum", 0) or 0)
         try:
