@@ -21,6 +21,7 @@ Then open http://localhost:5000 in your browser.
 Requirements: none (uses Python stdlib only)
 """
 
+import sys
 import struct
 import socket
 import threading
@@ -36,10 +37,13 @@ from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import os
+import re
 
 log = logging.getLogger(__name__)
 
-VERSION = "2.0.0"
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+
+VERSION = "2.0.1"
 
 # ── Leaderboard config ───────────────────────────────────────────────────────
 # Default URL is the shared Pitwall IQ backend — no configuration needed.
@@ -1060,6 +1064,10 @@ def _lb_post(payload, background=True):
     """
     if not LEADERBOARD_URL:
         return None
+    pid = payload.get("player_id", "")
+    if not _UUID_RE.match(str(pid)):
+        log.debug("Skipping lb_post: player_id is not a valid UUID")
+        return None
     def _run():
         try:
             from urllib.request import urlopen, Request as UReq
@@ -1268,6 +1276,10 @@ class Handler(BaseHTTPRequestHandler):
 
         elif parsed.path.startswith("/api/track-svg/"):
             name = os.path.basename(parsed.path.split("/api/track-svg/", 1)[1])
+            if name not in set(TRACK_SVG.values()):
+                self.send_response(404)
+                self.end_headers()
+                return
             svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "assets", "tracks", f"{name}.svg")
             if os.path.exists(svg_path):
@@ -1326,7 +1338,7 @@ class Handler(BaseHTTPRequestHandler):
             con = sqlite3.connect(DB_PATH)
             con.row_factory = sqlite3.Row
             if track_filter:
-                rows = con.execute(
+                rows = con.execute(  # nosec B608 — parameterized query, no injection risk
                     "SELECT * FROM personal_bests"
                     " WHERE track=?"
                     " AND track IS NOT NULL AND track != '' AND track != 'Unknown'"
@@ -1335,7 +1347,7 @@ class Handler(BaseHTTPRequestHandler):
                     (track_filter,)
                 ).fetchall()
             else:
-                rows = con.execute(
+                rows = con.execute(  # nosec B608 — static query
                     "SELECT * FROM personal_bests"
                     " WHERE track IS NOT NULL AND track != '' AND track != 'Unknown'"
                     " AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'"
@@ -1505,6 +1517,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/lb-refresh":
             length = int(self.headers.get('Content-Length', 0) or 0)
+            if length > 8192:
+                self.send_response(413); self.end_headers(); return
             body = {}
             if length:
                 try:
@@ -1608,8 +1622,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(err)
 
         elif parsed.path == "/api/lb-settings":
-            length = int(self.headers.get("Content-Length", 0))
-            body   = json.loads(self.rfile.read(length))
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > 8192:
+                self.send_response(413); self.end_headers(); return
+            body   = json.loads(self.rfile.read(length)) if length else {}
             opt_in       = bool(body.get("opt_in", False))
             display_name = str(body.get("display_name", "Anonymous"))[:32].strip() or "Anonymous"
             with state_lock:
@@ -1681,7 +1697,8 @@ def main():
             start_iracing_source(state, state_lock, ir_callbacks)
             print("🏁  iRacing source active (waiting for iRacing...)")
         else:
-            print("ℹ️   iRacing support: install pyirsdk to enable")
+            print(f"ℹ️   iRacing support: run the following command to enable, then restart:")
+            print(f"       {sys.executable} -m pip install pyirsdk")
     except ImportError:
         pass  # iracing_source.py not present — F1-only mode
 
