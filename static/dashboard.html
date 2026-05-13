@@ -1091,10 +1091,10 @@ function renderLeaderboard(d) {
     const dateStr = e.submitted_at ? _fmtLbDate(e.submitted_at) : '—';
     rows += `<tr class="${e.is_player ? 'lb-player' : ''}">
       <td class="lb-rank ${top3}">${e.rank}</td>
-      <td class="lap-time">${e.lap_time}</td>
+      <td class="lap-time">${esc(e.lap_time)}</td>
       <td>${compoundPill(e.compound)}</td>
       <td style="font-size:.78rem">${esc(e.display_name)}</td>
-      <td style="font-size:.72rem;color:var(--muted)">${dateStr}</td>
+      <td style="font-size:.72rem;color:var(--muted)">${esc(dateStr)}</td>
     </tr>`;
   }
   const rankNote = d.player_rank
@@ -1404,9 +1404,9 @@ function renderPBs(pbs) {
   for (const pb of pbs) {
     const setAt = pb.set_at ? pb.set_at.replace('T',' ').substring(0,19) : '—';
     rows += `<tr>
-      <td>${pb.track}</td>
-      <td style="color:var(--muted);font-size:.72rem">${pb.session_type || '—'}</td>
-      <td class="lap-time" style="color:var(--purple)">${pb.lap_time}</td>
+      <td>${esc(pb.track)}</td>
+      <td style="color:var(--muted);font-size:.72rem">${esc(pb.session_type || '—')}</td>
+      <td class="lap-time" style="color:var(--purple)">${esc(pb.lap_time)}</td>
       <td>${compoundPill(pb.compound)}</td>
       <td style="color:var(--muted);font-size:.72rem">${setAt}</td>
     </tr>`;
@@ -1441,13 +1441,13 @@ function renderSessions(sessions) {
   if (!sessions || sessions.length === 0) { el.innerHTML = ''; return; }
   let rows = '';
   for (const s of sessions) {
-    const started = s.started_at ? s.started_at.replace('T',' ').substring(0,19) : '—';
-    const ended   = s.ended_at   ? s.ended_at.replace('T',' ').substring(0,19)   : '<span style="color:var(--green)">In Progress</span>';
+    const started = esc(s.started_at ? s.started_at.replace('T',' ').substring(0,19) : '—');
+    const ended   = s.ended_at ? esc(s.ended_at.replace('T',' ').substring(0,19)) : '<span style="color:var(--green)">In Progress</span>';
     rows += `<tr>
       <td class="lap-num">${s.id}</td>
-      <td>${s.track || '—'}</td>
-      <td>${s.session_type || '—'}</td>
-      <td>${s.weather || '—'}</td>
+      <td>${esc(s.track || '—')}</td>
+      <td>${esc(s.session_type || '—')}</td>
+      <td>${esc(s.weather || '—')}</td>
       <td style="color:var(--muted);font-size:.72rem">${started}</td>
       <td style="font-size:.72rem">${ended}</td>
       <td><a class="export-link" href="/api/sessions/${s.id}/export">CSV</a></td>
