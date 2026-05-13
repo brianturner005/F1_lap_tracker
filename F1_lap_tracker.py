@@ -36,8 +36,11 @@ from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import os
+import re
 
 log = logging.getLogger(__name__)
+
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 
 VERSION = "2.0.0"
 
@@ -1060,6 +1063,10 @@ def _lb_post(payload, background=True):
     """
     if not LEADERBOARD_URL:
         return None
+    pid = payload.get("player_id", "")
+    if not _UUID_RE.match(str(pid)):
+        log.debug("Skipping lb_post: player_id is not a valid UUID")
+        return None
     def _run():
         try:
             from urllib.request import urlopen, Request as UReq
@@ -1268,6 +1275,11 @@ class Handler(BaseHTTPRequestHandler):
 
         elif parsed.path.startswith("/api/track-svg/"):
             name = os.path.basename(parsed.path.split("/api/track-svg/", 1)[1])
+            # Allowlist: only serve known SVG names to prevent path traversal
+            if name not in set(TRACK_SVG.values()):
+                self.send_response(404)
+                self.end_headers()
+                return
             svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "assets", "tracks", f"{name}.svg")
             if os.path.exists(svg_path):
@@ -1326,7 +1338,7 @@ class Handler(BaseHTTPRequestHandler):
             con = sqlite3.connect(DB_PATH)
             con.row_factory = sqlite3.Row
             if track_filter:
-                rows = con.execute(
+                rows = con.execute(  # nosec B608 — parameterized query, no injection risk
                     "SELECT * FROM personal_bests"
                     " WHERE track=?"
                     " AND track IS NOT NULL AND track != '' AND track != 'Unknown'"
@@ -1335,7 +1347,7 @@ class Handler(BaseHTTPRequestHandler):
                     (track_filter,)
                 ).fetchall()
             else:
-                rows = con.execute(
+                rows = con.execute(  # nosec B608 — static query
                     "SELECT * FROM personal_bests"
                     " WHERE track IS NOT NULL AND track != '' AND track != 'Unknown'"
                     " AND session_type IS NOT NULL AND session_type != '' AND session_type != 'Unknown'"
@@ -1505,6 +1517,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/lb-refresh":
             length = int(self.headers.get('Content-Length', 0) or 0)
+            if length > 8192:
+                self.send_response(413); self.end_headers(); return
             body = {}
             if length:
                 try:
@@ -1608,8 +1622,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(err)
 
         elif parsed.path == "/api/lb-settings":
-            length = int(self.headers.get("Content-Length", 0))
-            body   = json.loads(self.rfile.read(length))
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > 8192:
+                self.send_response(413); self.end_headers(); return
+            body   = json.loads(self.rfile.read(length)) if length else {}
             opt_in       = bool(body.get("opt_in", False))
             display_name = str(body.get("display_name", "Anonymous"))[:32].strip() or "Anonymous"
             with state_lock:

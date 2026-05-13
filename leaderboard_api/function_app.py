@@ -152,6 +152,8 @@ def _handle_submit(body) -> func.HttpResponse:
     lap_time: str = str(body["lap_time"]).strip()
     compound: str = str(body.get("compound", "")).strip()
     submitted_at: str = str(body["submitted_at"]).strip()
+    if len(submitted_at) > 40:
+        return _error("submitted_at value too long.")
     sim: str = str(body.get("sim", "F1")).strip()
     if sim not in ("F1", "iRacing"):
         sim = "F1"
@@ -163,6 +165,8 @@ def _handle_submit(body) -> func.HttpResponse:
     if not display_name or len(display_name) > 32:
         return _error("display_name must be between 1 and 32 characters.")
     if not all(c.isprintable() for c in display_name):
+        return _error("display_name contains invalid characters.")
+    if any(c in display_name for c in ('<', '>', '"', "'", '&', '`')):
         return _error("display_name contains invalid characters.")
     if _contains_profanity(display_name):
         return _error("That display name isn't allowed. Please choose a different name.")
@@ -385,7 +389,9 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
 
     # ── IP-based rate limit — prevents bypass via new UUIDs ──────────────────
     x_forwarded = req.headers.get("X-Forwarded-For", "")
-    raw_ip = x_forwarded.split(",")[0].strip() if x_forwarded else req.headers.get("X-Client-IP", "unknown")
+    # Use the rightmost (last) IP in X-Forwarded-For; Azure App Service appends
+    # the real client IP at the end, so the first entry is attacker-controllable.
+    raw_ip = x_forwarded.split(",")[-1].strip() if x_forwarded else req.headers.get("X-Client-IP", "unknown")
     try:
         ipaddress.ip_address(raw_ip)
         client_ip = raw_ip
@@ -419,24 +425,25 @@ def debrief(req: func.HttpRequest) -> func.HttpResponse:
     # ── Build prompt ──────────────────────────────────────────────────────────
     def _clean(s: str, max_len: int = 60) -> str:
         """Strip newlines and control characters to prevent prompt injection."""
-        return str(s).replace("\n", " ").replace("\r", " ").strip()[:max_len]
+        import re as _re
+        return _re.sub(r'[\x00-\x1f\x7f]', ' ', str(s)).strip()[:max_len]
 
     track     = _clean(session.get("track", "Unknown"))
     sess_type = _clean(session.get("session_type", "Unknown"))
     weather   = _clean(session.get("weather", "Unknown"))
     best_time = _ms_to_laptime(best_lap_ms)
     pb_time   = _ms_to_laptime(track_pb_ms) if track_pb_ms else "No record"
-    pb_suffix = f" ({track_pb_cmp})" if track_pb_cmp else ""
+    pb_suffix = f" ({_clean(track_pb_cmp, 20)})" if track_pb_cmp else ""
 
     header = "Lap | Tyre   | Time         | Delta      | S1         | S2         | S3         | Valid"
     rows = []
     for lap in laps:
         valid = "INVALID" if lap.get("invalid") else "valid"
         rows.append(
-            f"Lap {lap.get('lap_num', '?'):>3} | {(lap.get('compound') or '?'):>6} | "
-            f"{lap.get('lap_time', '?')} | {lap.get('delta', ''):>9} | "
-            f"{lap.get('s1', '—'):>9} | {lap.get('s2', '—'):>9} | "
-            f"{lap.get('s3', '—'):>9} | {valid}"
+            f"Lap {_clean(lap.get('lap_num', '?'), 5):>3} | {_clean(lap.get('compound') or '?', 8):>6} | "
+            f"{_clean(lap.get('lap_time', '?'), 12)} | {_clean(lap.get('delta', ''), 12):>9} | "
+            f"{_clean(lap.get('s1', '—'), 12):>9} | {_clean(lap.get('s2', '—'), 12):>9} | "
+            f"{_clean(lap.get('s3', '—'), 12):>9} | {valid}"
         )
 
     # Build telemetry table if any laps have telem data
