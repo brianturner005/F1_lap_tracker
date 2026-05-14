@@ -13,6 +13,7 @@ pyirsdk is not available.
 """
 
 import logging
+import math
 import threading
 import time
 from datetime import datetime
@@ -311,31 +312,34 @@ class IRacingSource:
 
         fuel = round(float(_safe(ir, "FuelLevel", 0.0) or 0.0), 2)
 
-        # World position for track map
-        wx = _safe(ir, "CarIdxWorldPosX", None)
-        wz = _safe(ir, "CarIdxWorldPosZ", None)
-        car_pos = None
-        if wx and wz and player_idx < len(wx):
-            car_pos = {"x": round(float(wx[player_idx]), 1),
-                       "z": round(float(wz[player_idx]), 1)}
-
         # Sector tracking and trace updates
         dist_pct      = float(_safe(ir, "LapDistPct", 0.0) or 0.0)
         cur_lap_time  = float(_safe(ir, "LapCurrentLapTime", 0.0) or 0.0)
         current_sector = self._update_sectors(dist_pct, cur_lap_time)
 
-        if car_pos:
-            trace = self._lap_trace
-            if len(trace) < _TRACE_MAX_PTS:
-                prev = trace[-1] if trace else None
-                if not prev or (abs(car_pos["x"] - prev["x"]) + abs(car_pos["z"] - prev["z"])) >= _TRACE_MIN_DIST:
-                    trace.append({
-                        "x": car_pos["x"], "z": car_pos["z"],
-                        "speed": speed_kmh, "sector": current_sector,
-                        "throttle": round(throttle, 3), "brake": round(brake, 3),
-                        "steer": steer, "gear": gear, "rpm": int(rpm_val),
-                        "gLat": lat_g, "gLon": lon_g,
-                    })
+        # World position for track map — iRacing SDK does not expose CarIdxWorldPos*
+        # so we always fall back to a synthetic circular layout from LapDistPct.
+        # Real coords would need to be integrated from velocity; the circle gives the
+        # dashboard enough x/z data to drive the telemetry charts correctly.
+        _R = 500.0
+        angle = dist_pct * 2 * math.pi
+        car_pos = {
+            "x": round(math.cos(angle) * _R, 1),
+            "z": round(math.sin(angle) * _R, 1),
+        }
+
+        trace = self._lap_trace
+        if len(trace) < _TRACE_MAX_PTS:
+            prev = trace[-1] if trace else None
+            dist_moved = (abs(car_pos["x"] - prev["x"]) + abs(car_pos["z"] - prev["z"])) if prev else _TRACE_MIN_DIST
+            if dist_moved >= _TRACE_MIN_DIST:
+                trace.append({
+                    "x": car_pos["x"], "z": car_pos["z"],
+                    "speed": speed_kmh, "sector": current_sector,
+                    "throttle": round(throttle, 3), "brake": round(brake, 3),
+                    "steer": steer, "gear": gear, "rpm": int(rpm_val),
+                    "gLat": lat_g, "gLon": lon_g,
+                })
 
         # Lap completion detection
         last_lap_s = float(_safe(ir, "LapLastLapTime", -1.0) or -1.0)
