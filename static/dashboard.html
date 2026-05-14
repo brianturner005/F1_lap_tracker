@@ -1688,10 +1688,12 @@ function render(d) {
 
   let rows = '';
   if (d.laps.length === 0) {
-    rows = `<tr><td colspan="9" class="waiting"><div class="big-icon">🏎</div>
-      <p>No laps recorded yet.<br>
-      Make sure UDP telemetry is <code>ON</code> in F1 25 settings<br>
-      IP: <code>127.0.0.1</code> &nbsp; Port: <code>20777</code></p></td></tr>`;
+    const noLapMsg = d.sim === 'iRacing'
+      ? `<p>No laps recorded yet.<br>Complete a full lap in iRacing to see your data here.</p>`
+      : `<p>No laps recorded yet.<br>
+         Make sure UDP telemetry is <code>ON</code> in F1 25 settings<br>
+         IP: <code>127.0.0.1</code> &nbsp; Port: <code>20777</code></p>`;
+    rows = `<tr><td colspan="9" class="waiting"><div class="big-icon">🏎</div>${noLapMsg}</td></tr>`;
   } else {
     const reversed = [...d.laps].reverse();
     for (const lap of reversed) {

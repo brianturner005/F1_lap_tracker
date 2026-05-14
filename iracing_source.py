@@ -162,6 +162,7 @@ class IRacingSource:
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
     def _on_connect(self):
+        print("[iRacing] Connected to iRacing SDK")
         log.info("iRacing connected")
         self._load_sector_boundaries()
         with self._lock:
@@ -248,6 +249,7 @@ class IRacingSource:
             self._session_key = session_key
             self._last_lap_time = None
             self._lap_num = 0
+            print(f"[iRacing] Session started — {track} ({session_type})")
 
             pb = self._cb["db_get_track_pb"](track, session_type, sim="iRacing")
             with self._lock:
@@ -402,8 +404,9 @@ class IRacingSource:
 
     def _on_lap_complete(self, lap_secs: float, track: str, session_type: str):
         lap_ms = int(round(lap_secs * 1000))
-        if not (30_000 <= lap_ms <= 600_000):
-            return  # sanity check — ignore implausible times
+        if not (20_000 <= lap_ms <= 600_000):
+            print(f"[iRacing] Lap ignored — time {lap_secs:.3f}s is outside valid range (20s–600s)")
+            return
 
         self._lap_num += 1
         lap_time_str = _sec_to_laptime(lap_secs)
@@ -453,6 +456,9 @@ class IRacingSource:
             "delta":       delta,
             "telem":       {},
         }
+
+        pb_marker = " 🏆 Track PB!" if is_track_pb else (" ✓ Session best" if is_best else "")
+        print(f"[iRacing] Lap {self._lap_num}: {lap_time_str}{pb_marker}")
 
         # Persist to DB
         if self._session_id is not None:
