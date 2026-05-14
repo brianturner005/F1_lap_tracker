@@ -21,6 +21,7 @@ Then open http://localhost:5000 in your browser.
 Requirements: none (uses Python stdlib only)
 """
 
+import sys
 import struct
 import socket
 import threading
@@ -1696,7 +1697,8 @@ def main():
             start_iracing_source(state, state_lock, ir_callbacks)
             print("🏁  iRacing source active (waiting for iRacing...)")
         else:
-            print("ℹ️   iRacing support: install pyirsdk to enable")
+            print(f"ℹ️   iRacing support: run the following command to enable, then restart:")
+            print(f"       {sys.executable} -m pip install pyirsdk")
     except ImportError:
         pass  # iracing_source.py not present — F1-only mode
 
