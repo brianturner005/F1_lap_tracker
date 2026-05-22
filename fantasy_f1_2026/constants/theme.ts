@@ -1,6 +1,0 @@
-export const F1_RED    = '#E10600'
-export const F1_DARK   = '#0F0F0F'
-export const F1_CARD   = '#1A1A1A'
-export const F1_BORDER = '#2A2A2A'
-export const F1_MUTED  = '#6B7280'
-export const F1_WHITE  = '#F3F4F6'
