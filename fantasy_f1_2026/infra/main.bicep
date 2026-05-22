@@ -4,12 +4,6 @@ param baseName string = 'fantasy-f1'
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
-@description('GitHub repo in the form owner/repo (used to link the Static Web App).')
-param githubRepo string = ''
-
-@description('GitHub branch to deploy from.')
-param githubBranch string = 'main'
-
 // ---------------------------------------------------------------------------
 // Cosmos DB — serverless
 // ---------------------------------------------------------------------------
@@ -48,29 +42,46 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
 }
 
 // ---------------------------------------------------------------------------
-// Azure Static Web App (Free tier) + managed Functions
+// Storage Account + Function App (for the API)
 // ---------------------------------------------------------------------------
 
-resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
-  name: '${baseName}-${uniqueString(resourceGroup().id)}'
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: '${replace(baseName, '-', '')}${uniqueString(resourceGroup().id)}sa'
   location: location
-  sku: { name: 'Free', tier: 'Free' }
-  properties: {
-    repositoryUrl: empty(githubRepo) ? null : 'https://github.com/${githubRepo}'
-    branch: githubBranch
-    buildProperties: {
-      appLocation: '/'
-      apiLocation: 'api'
-      outputLocation: 'dist'
-    }
-  }
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
+  properties: { supportsHttpsTrafficOnly: true, minimumTlsVersion: 'TLS1_2' }
 }
 
-resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
-  parent: staticWebApp
-  name: 'appsettings'
+resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
+  name: '${baseName}-plan'
+  location: location
+  sku: { name: 'B1', tier: 'Basic' }
+  kind: 'linux'
+  properties: { reserved: true }
+}
+
+resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
+  name: '${baseName}-func-${uniqueString(resourceGroup().id)}'
+  location: location
+  kind: 'functionapp,linux'
   properties: {
-    COSMOS_CONNECTION_STRING: cosmosAccount.listConnectionStrings().connectionStrings[0].connectionString
+    serverFarmId: appServicePlan.id
+    reserved: true
+    siteConfig: {
+      linuxFxVersion: 'Python|3.11'
+      appSettings: [
+        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}' }
+        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
+        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
+        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
+        { name: 'COSMOS_CONNECTION_STRING', value: cosmosAccount.listConnectionStrings().connectionStrings[0].connectionString }
+      ]
+      alwaysOn: true
+      ftpsState: 'Disabled'
+      minTlsVersion: '1.2'
+    }
+    httpsOnly: true
   }
 }
 
@@ -78,6 +89,6 @@ resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
 // Outputs
 // ---------------------------------------------------------------------------
 
-output staticWebAppUrl string = 'https://${staticWebApp.properties.defaultHostname}'
+output functionAppName string = functionApp.name
+output functionAppUrl  string = 'https://${functionApp.properties.defaultHostName}'
 output cosmosAccountName string = cosmosAccount.name
-output deploymentToken string = staticWebApp.listSecrets().properties.apiKey
